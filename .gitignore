@@ -1,0 +1,38 @@
+# Build outputs
+bin/
+obj/
+out/
+publish/
+*.exe
+*.dll
+*.pdb
+*.msix
+*.msixbundle
+
+# Local settings and secrets
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+data/
+logs/
+*.log
+
+# WebView2 / runtime state
+WebView2UserData/
+.webview2/
+
+# Node / web app runtime artifacts
+node_modules/
+.next/
+*.tsbuildinfo
+
+# IDE / OS files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store
+
