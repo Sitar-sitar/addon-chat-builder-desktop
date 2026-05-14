@@ -1,12 +1,25 @@
 using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace AddonChatBuilder.Desktop.Services;
 
 public sealed class LogService
 {
+    private static readonly TimeSpan Retention = TimeSpan.FromDays(30);
+    private static readonly Regex AssignmentSecretRegex = new(
+        @"(?i)\b(api[_-]?key|openai[_a-z0-9-]*|authorization|bearer|token)\b\s*[:=]\s*[""']?[^""'\s;]+",
+        RegexOptions.Compiled);
+    private static readonly Regex OpenAiKeyRegex = new(
+        @"\bsk-[A-Za-z0-9_-]{16,}\b",
+        RegexOptions.Compiled);
+    private static readonly Regex BearerRegex = new(
+        @"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
+        RegexOptions.Compiled);
+
     private readonly string _logDirectory;
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private bool _cleanupDone;
 
     public LogService()
     {
@@ -36,6 +49,7 @@ public sealed class LogService
         await _lock.WaitAsync();
         try
         {
+            CleanupOldLogs();
             await File.AppendAllTextAsync(path, line);
         }
         finally
@@ -51,17 +65,44 @@ public sealed class LogService
             return message;
         }
 
-        var lines = message.Split(["\r\n", "\n"], StringSplitOptions.None);
-        for (var i = 0; i < lines.Length; i++)
+        var redacted = AssignmentSecretRegex.Replace(message, match =>
         {
-            if (lines[i].Contains("API_KEY", StringComparison.OrdinalIgnoreCase) ||
-                lines[i].Contains("OPENAI_", StringComparison.OrdinalIgnoreCase))
+            var separatorIndex = match.Value.IndexOf('=');
+            if (separatorIndex < 0)
             {
-                var equals = lines[i].IndexOf('=');
-                lines[i] = equals >= 0 ? $"{lines[i][..(equals + 1)]}[redacted]" : "[redacted]";
+                separatorIndex = match.Value.IndexOf(':');
             }
+
+            return separatorIndex >= 0 ? $"{match.Value[..(separatorIndex + 1)]}[redacted]" : "[redacted]";
+        });
+
+        redacted = BearerRegex.Replace(redacted, "Bearer [redacted]");
+        redacted = OpenAiKeyRegex.Replace(redacted, "[redacted]");
+        return redacted;
+    }
+
+    private void CleanupOldLogs()
+    {
+        if (_cleanupDone)
+        {
+            return;
         }
 
-        return string.Join(Environment.NewLine, lines);
+        _cleanupDone = true;
+        var cutoff = DateTime.UtcNow - Retention;
+        foreach (var path in Directory.EnumerateFiles(_logDirectory, "*.log"))
+        {
+            try
+            {
+                if (File.GetLastWriteTimeUtc(path) < cutoff)
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // Logging must never fail because old log cleanup failed.
+            }
+        }
     }
 }

@@ -58,7 +58,7 @@ public partial class MainWindow : Window
             _port = _ports.FindAvailablePort(_settings.PreferredPort, _settings.MaxPort);
             _activeLocalApiRequests = 0;
 
-            await WebView.EnsureCoreWebView2Async();
+            await EnsureWebView2Async();
             await ConfigureWebViewAsync();
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(50));
@@ -228,6 +228,13 @@ public partial class MainWindow : Window
         _webViewConfigured = true;
     }
 
+    private async Task EnsureWebView2Async()
+    {
+        var userDataFolder = AppDataPathService.GetWritableDirectory("WebView2UserData");
+        var environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+        await WebView.EnsureCoreWebView2Async(environment);
+    }
+
     private IReadOnlyDictionary<string, string> AddDesktopApiToken(IReadOnlyDictionary<string, string> env)
     {
         var values = new Dictionary<string, string>(env, StringComparer.OrdinalIgnoreCase)
@@ -391,6 +398,11 @@ public partial class MainWindow : Window
         }
 
         e.Cancel = true;
+        if (uri.Scheme is not ("http" or "https"))
+        {
+            return;
+        }
+
         try
         {
             Process.Start(new ProcessStartInfo
