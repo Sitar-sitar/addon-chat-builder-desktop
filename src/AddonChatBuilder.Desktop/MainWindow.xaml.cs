@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private ServerState _state = ServerState.Starting;
     private int _port;
     private bool _isClosing;
+    private bool _isStarting;
     private bool _webViewConfigured;
 
     public MainWindow()
@@ -39,6 +40,12 @@ public partial class MainWindow : Window
 
     private async Task StartDesktopAsync(ServerState startState)
     {
+        if (_isClosing || _isStarting)
+        {
+            return;
+        }
+
+        _isStarting = true;
         try
         {
             SetState(startState, startState == ServerState.Restarting ? "アプリを再開しています..." : "Addon Chat Builder を起動しています...", "少しだけお待ちください。");
@@ -64,7 +71,16 @@ public partial class MainWindow : Window
         {
             await _log.ErrorAsync("Startup failed.", ex);
             await _webApp.StopAsync();
+            if (_isClosing)
+            {
+                return;
+            }
+
             SetState(ServerState.Error, "起動できませんでした", "Node.js または addon-chat-builder の構成を確認してください。");
+        }
+        finally
+        {
+            _isStarting = false;
         }
     }
 
@@ -350,6 +366,12 @@ public partial class MainWindow : Window
         await _log.InfoAsync("Desktop app closed.");
         e.Cancel = false;
         Close();
+    }
+
+    public void EmergencyStopWebApp()
+    {
+        _activity.Stop();
+        _webApp.EmergencyStop();
     }
 
     private void SetState(ServerState state, string title, string message)
