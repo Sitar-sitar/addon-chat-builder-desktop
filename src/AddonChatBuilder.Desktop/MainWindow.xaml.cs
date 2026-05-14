@@ -21,6 +21,8 @@ public partial class MainWindow : Window
     private IReadOnlyDictionary<string, string> _env = new Dictionary<string, string>();
     private ServerState _state = ServerState.Starting;
     private int _port;
+    private string _desktopApiToken = Guid.NewGuid().ToString("N");
+    private int _activeLocalApiRequests;
     private bool _isClosing;
     private bool _isStarting;
     private bool _webViewConfigured;
@@ -51,9 +53,10 @@ public partial class MainWindow : Window
             SetState(startState, startState == ServerState.Restarting ? "アプリを再開しています..." : "Addon Chat Builder を起動しています...", "少しだけお待ちください。");
 
             _settings ??= await _settingsService.LoadAsync();
-            _env = await _settingsService.LoadEnvAsync(_settings);
+            _env = AddDesktopApiToken(await _settingsService.LoadEnvAsync(_settings));
             _activity.Configure(TimeSpan.FromMinutes(_settings.IdleStopMinutes));
             _port = _ports.FindAvailablePort(_settings.PreferredPort, _settings.MaxPort);
+            _activeLocalApiRequests = 0;
 
             await WebView.EnsureCoreWebView2Async();
             await ConfigureWebViewAsync();
@@ -100,12 +103,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        await WebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
-            """
+        var script = """
             (() => {
               if (window.__addonChatBuilderDesktopBridgeInstalled) return;
               window.__addonChatBuilderDesktopBridgeInstalled = true;
 
+              const desktopApiToken = "__DESKTOP_API_TOKEN__";
               const originalFetch = window.fetch.bind(window);
               let nextRequestId = 1;
               const pending = new Map();
@@ -131,7 +134,9 @@ public partial class MainWindow : Window
               window.fetch = (input, init) => {
                 const url = typeof input === "string" ? input : input?.url;
                 const method = (init?.method || "GET").toUpperCase();
-                if (url === "/api/select-folder" && method === "POST" && window.chrome?.webview) {
+                const localPath = getLocalPath(url);
+
+                if (localPath === "/api/select-folder" && method === "POST" && window.chrome?.webview) {
                   let currentPath = "";
                   try {
                     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
@@ -150,53 +155,86 @@ public partial class MainWindow : Window
                   return promise;
                 }
 
-                if ((url === "/api/chat" || url === "/api/build") && method === "POST") {
-                  return retryLocalApi(input, init, url);
+                if ((localPath === "/api/chat" || localPath === "/api/build") && method === "POST") {
+                  return retryLocalApi(input, withDesktopToken(init), localPath);
                 }
 
                 return originalFetch(input, init);
               };
 
+              function getLocalPath(url) {
+                try {
+                  const parsed = new URL(url, window.location.origin);
+                  return parsed.origin === window.location.origin ? parsed.pathname : "";
+                } catch {
+                  return "";
+                }
+              }
+
+              function withDesktopToken(init) {
+                const nextInit = { ...(init || {}) };
+                const headers = new Headers(init?.headers || {});
+                headers.set("X-Desktop-Token", desktopApiToken);
+                nextInit.headers = headers;
+                return nextInit;
+              }
+
               async function retryLocalApi(input, init, url) {
                 const maxAttempts = 3;
                 let lastResponse = null;
 
-                for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                  lastResponse = await originalFetch(input, init);
-                  if (lastResponse.ok || lastResponse.status < 500 || attempt === maxAttempts) {
-                    break;
+                window.chrome?.webview?.postMessage({ type: "localApiRequest", active: true, url });
+                try {
+                  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                    lastResponse = await originalFetch(input, init);
+                    if (lastResponse.ok || lastResponse.status < 500 || attempt === maxAttempts) {
+                      break;
+                    }
+
+                    await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
                   }
 
-                  await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
-                }
+                  if (!lastResponse || lastResponse.ok || lastResponse.status < 500) {
+                    return lastResponse;
+                  }
 
-                if (!lastResponse || lastResponse.ok || lastResponse.status < 500) {
+                  let body = null;
+                  try {
+                    body = await lastResponse.clone().json();
+                  } catch {
+                    body = null;
+                  }
+
+                  const rawError = typeof body?.error === "string" ? body.error : "";
+                  if (rawError.includes("OpenAI API") || rawError.includes("Codex API")) {
+                    const label = url === "/api/build" ? "生成" : "AI応答";
+                    return new Response(JSON.stringify({
+                      error: `${label}の取得中に OpenAI 側で一時的なエラーが発生しました。少し時間を置いて、もう一度送信してください。`
+                    }), {
+                      status: lastResponse.status,
+                      headers: { "Content-Type": "application/json" }
+                    });
+                  }
+
                   return lastResponse;
+                } finally {
+                  window.chrome?.webview?.postMessage({ type: "localApiRequest", active: false, url });
                 }
-
-                let body = null;
-                try {
-                  body = await lastResponse.clone().json();
-                } catch {
-                  body = null;
-                }
-
-                const rawError = typeof body?.error === "string" ? body.error : "";
-                if (rawError.includes("OpenAI API") || rawError.includes("Codex API")) {
-                  const label = url === "/api/build" ? "生成" : "AI応答";
-                  return new Response(JSON.stringify({
-                    error: `${label}の取得中に OpenAI 側で一時的なエラーが発生しました。少し時間を置いて、もう一度送信してください。`
-                  }), {
-                    status: lastResponse.status,
-                    headers: { "Content-Type": "application/json" }
-                  });
-                }
-
-                return lastResponse;
               }
             })();
-            """);
+            """;
+        script = script.Replace("\"__DESKTOP_API_TOKEN__\"", JsonSerializer.Serialize(_desktopApiToken));
+        await WebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script);
         _webViewConfigured = true;
+    }
+
+    private IReadOnlyDictionary<string, string> AddDesktopApiToken(IReadOnlyDictionary<string, string> env)
+    {
+        var values = new Dictionary<string, string>(env, StringComparer.OrdinalIgnoreCase)
+        {
+            ["DESKTOP_API_TOKEN"] = _desktopApiToken
+        };
+        return values;
     }
 
     private async void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -213,6 +251,14 @@ public partial class MainWindow : Window
             }
 
             var type = typeProperty.GetString();
+            if (type == "localApiRequest")
+            {
+                var active = document.RootElement.TryGetProperty("active", out var activeProperty) && activeProperty.GetBoolean();
+                _activeLocalApiRequests = active ? _activeLocalApiRequests + 1 : Math.Max(0, _activeLocalApiRequests - 1);
+                _activity.MarkActivity();
+                return;
+            }
+
             if (type != "selectOutputFolder")
             {
                 return;
@@ -268,6 +314,13 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_activeLocalApiRequests > 0)
+        {
+            await _log.InfoAsync("Idle timeout skipped because a local API request is still running.");
+            _activity.MarkActivity();
+            return;
+        }
+
         await _log.InfoAsync("Idle timeout reached. Stopping web app.");
         _activity.Stop();
         await _webApp.StopAsync();
@@ -318,6 +371,7 @@ public partial class MainWindow : Window
 
     private void WebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
+        _activeLocalApiRequests = 0;
         _activity.MarkActivity();
     }
 
