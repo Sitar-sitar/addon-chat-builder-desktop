@@ -1,0 +1,83 @@
+<Window x:Class="AddonChatBuilder.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Addon Chat Builder"
+        Width="1180"
+        Height="820"
+        MinWidth="900"
+        MinHeight="640"
+        Background="#F3F4F6"
+        Closing="Window_Closing"
+        Loaded="Window_Loaded"
+        PreviewKeyDown="Window_Activity"
+        PreviewMouseDown="Window_Activity"
+        PreviewMouseWheel="Window_Activity">
+    <Grid>
+        <wv2:WebView2 x:Name="WebView"
+                      Visibility="Collapsed"
+                      NavigationStarting="WebView_NavigationStarting"
+                      NavigationCompleted="WebView_NavigationCompleted" />
+
+        <Border x:Name="Overlay"
+                Background="#F9FAFB"
+                Visibility="Visible"
+                MouseDown="Overlay_MouseDown">
+            <Grid>
+                <Border Width="520"
+                        Padding="28"
+                        Background="White"
+                        BorderBrush="#D1D5DB"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                    <StackPanel>
+                        <TextBlock x:Name="OverlayTitle"
+                                   Text="Addon Chat Builder を起動しています..."
+                                   FontSize="22"
+                                   FontWeight="SemiBold"
+                                   Foreground="#111827"
+                                   TextWrapping="Wrap" />
+                        <TextBlock x:Name="OverlayMessage"
+                                   Margin="0,12,0,0"
+                                   Text="少しだけお待ちください。"
+                                   FontSize="14"
+                                   Foreground="#4B5563"
+                                   TextWrapping="Wrap" />
+                        <StackPanel x:Name="OverlayButtons"
+                                    Orientation="Horizontal"
+                                    Margin="0,22,0,0"
+                                    Visibility="Collapsed">
+                            <Button x:Name="RetryButton"
+                                    Content="再試行"
+                                    Width="96"
+                                    Height="34"
+                                    Margin="0,0,10,0"
+                                    Click="RetryButton_Click" />
+                            <Button x:Name="ResumeButton"
+                                    Content="再開"
+                                    Width="96"
+                                    Height="34"
+                                    Visibility="Collapsed"
+                                    Click="ResumeButton_Click" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border x:Name="StatusBar"
+                Height="28"
+                VerticalAlignment="Bottom"
+                Background="#111827"
+                Opacity="0.9">
+            <TextBlock x:Name="StatusText"
+                       Margin="12,0"
+                       VerticalAlignment="Center"
+                       Foreground="White"
+                       FontSize="12"
+                       Text="準備中" />
+        </Border>
+    </Grid>
+</Window>
