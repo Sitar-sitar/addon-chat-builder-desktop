@@ -29,6 +29,13 @@ WebView2UserData/
 node_modules/
 .next/
 *.tsbuildinfo
+apps/web/node_modules/
+apps/web/.next/
+apps/web/.env
+apps/web/.env.*
+!apps/web/.env.example
+apps/web/generated/
+apps/web/tmp/
 
 # IDE / OS files
 .vs/

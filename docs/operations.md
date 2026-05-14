@@ -28,7 +28,24 @@ SDK バージョンは `global.json` で `8.0.421` に固定している。
 dotnet run --project src\AddonChatBuilder.Desktop
 ```
 
-アプリは起動時に `D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\.env` を読み込み、既存Webアプリの子プロセスへ環境変数として渡す。
+アプリは起動時に `D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\.env` を読み込み、Webアプリの子プロセスへ環境変数として渡す。
+
+## Webアプリ
+
+Next.js Webアプリは、このリポジトリ内の `apps\web` で管理する。
+
+初回セットアップまたは依存関係を更新した場合は、以下を実行する。
+
+```powershell
+cd D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\apps\web
+npm install
+npm run lint
+npm run build
+```
+
+`.env` は `apps\web` へコピーしない。APIキーなどの値は `D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\.env` に置く。デスクトップアプリ経由では起動時に環境変数として渡し、`apps\web` を直接起動した場合も同じ `.env` を参照する。
+
+移行期間中は、`apps\web\node_modules\next\dist\bin\next` が存在しない場合、隣接する旧 `D:\my-app2\Minecraft_Addon\addon-chat-builder` も探索対象になる。
 
 ## デスクトップショートカット
 

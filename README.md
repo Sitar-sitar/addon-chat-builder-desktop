@@ -2,7 +2,32 @@
 
 Minecraft Bedrock アドオン作成支援アプリ `addon-chat-builder` を、家族・別Windowsユーザーが扱いやすい専用デスクトップアプリとして起動するための .NET + WebView2 プロジェクト。
 
-現行の Next.js アプリ本体は変更せず、デスクトップ版は起動・停止・WebView表示・Windows標準UI連携を担当する。
+Next.js アプリ本体は `apps/web` で管理し、デスクトップ版は起動・停止・WebView表示・Windows標準UI連携を担当する。
+
+## 構成
+
+```text
+addon-chat-builder-desktop/
+├── apps/
+│   └── web/                          # Next.js Webアプリ
+├── src/
+│   └── AddonChatBuilder.Desktop/     # WPF + WebView2 デスクトップアプリ
+├── docs/
+└── scripts/
+```
+
+移行期間中は、`apps/web` に依存関係が未導入の場合、隣接する既存 `..\addon-chat-builder` も自動探索対象にする。
+
+## Web アプリの依存関係
+
+```powershell
+cd apps\web
+npm install
+npm run lint
+npm run build
+```
+
+`.env` はGit管理しない。必要なキーは `D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\.env` に置く。デスクトップアプリ経由では起動時に環境変数として渡し、`apps\web` を直接起動した場合も同じ `.env` を参照する。
 
 ## .NET SDK
 

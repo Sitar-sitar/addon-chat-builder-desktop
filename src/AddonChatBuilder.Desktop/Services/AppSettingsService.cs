@@ -155,7 +155,7 @@ public sealed class AppSettingsService
     {
         var changed = false;
 
-        if (string.IsNullOrWhiteSpace(settings.WebAppPath) || !Directory.Exists(settings.WebAppPath))
+        if (string.IsNullOrWhiteSpace(settings.WebAppPath) || !IsRunnableWebAppPath(settings.WebAppPath))
         {
             var webAppPath = FindWebAppPath();
             if (!string.IsNullOrWhiteSpace(webAppPath) && settings.WebAppPath != webAppPath)
@@ -212,12 +212,13 @@ public sealed class AppSettingsService
         {
             foreach (var candidate in new[]
             {
+                Path.Combine(root, "apps", "web"),
                 Path.Combine(root, "addon-chat-builder"),
                 Path.Combine(root, "..", "addon-chat-builder")
             })
             {
                 var fullPath = Path.GetFullPath(candidate);
-                if (File.Exists(Path.Combine(fullPath, "package.json")))
+                if (IsRunnableWebAppPath(fullPath))
                 {
                     return fullPath;
                 }
@@ -225,6 +226,17 @@ public sealed class AppSettingsService
         }
 
         return string.Empty;
+    }
+
+    private static bool IsRunnableWebAppPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+        {
+            return false;
+        }
+
+        return File.Exists(Path.Combine(path, "package.json"))
+            && File.Exists(Path.Combine(path, "node_modules", "next", "dist", "bin", "next"));
     }
 
     private static string FindEnvFilePath()

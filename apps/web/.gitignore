@@ -1,0 +1,16 @@
+.env
+API.env
+.env*.local
+node_modules/
+.next/
+out/
+dist/
+*.log
+*.tsbuildinfo
+generated/
+tmp/
+.launcher/
+*.db
+*.sqlite
+*.sqlite3
+*.lnk
