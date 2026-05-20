@@ -83,7 +83,7 @@ function Get-ProfileDesktopDirectory {
     param([string]$ProfilePath)
 
     foreach ($candidate in Get-ProfileDesktopCandidates -ProfilePath $ProfilePath) {
-        if (Test-Path -LiteralPath $candidate) {
+        if (Test-Path -LiteralPath $candidate -ErrorAction SilentlyContinue) {
             return $candidate
         }
     }

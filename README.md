@@ -16,7 +16,7 @@ addon-chat-builder-desktop/
 └── scripts/
 ```
 
-移行期間中は、`apps/web` に依存関係が未導入の場合、隣接する既存 `..\addon-chat-builder` も自動探索対象にする。
+ユーザー別設定が旧 `..\addon-chat-builder` を指していても、`apps/web` が実行可能なら起動時に自動で `apps/web` へ移行する。`apps/web` に依存関係が未導入の場合は、移行期間中の互換性として隣接する旧 `..\addon-chat-builder` も探索対象にする。
 
 ## Web アプリの依存関係
 

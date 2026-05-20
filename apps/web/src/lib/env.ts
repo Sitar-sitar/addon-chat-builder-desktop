@@ -3,6 +3,11 @@ import path from "node:path";
 
 const CUSTOM_ENV_FILE = "API.env";
 const DESKTOP_ENV_FILE = path.resolve(/* turbopackIgnore: true */ process.cwd(), "..", "..", ".env");
+const USER_ENV_FILE = path.join(
+  process.env.LOCALAPPDATA || "",
+  "AddonChatBuilderDesktop",
+  ".env"
+);
 
 export function getEnvValue(name: string): string | undefined {
   const existing = process.env[name]?.trim();
@@ -15,9 +20,11 @@ export function getEnvValue(name: string): string | undefined {
 function readEnvFiles(): Record<string, string> {
   const values: Record<string, string> = {};
   for (const envPath of [
+    USER_ENV_FILE,
     DESKTOP_ENV_FILE,
     path.join(/* turbopackIgnore: true */ process.cwd(), CUSTOM_ENV_FILE),
   ]) {
+    if (!envPath) continue;
     if (!fs.existsSync(envPath)) continue;
 
     const content = fs.readFileSync(envPath, "utf8");

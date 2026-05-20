@@ -82,34 +82,47 @@ public sealed class AppSettingsService
 
     public async Task<IReadOnlyDictionary<string, string>> LoadEnvAsync(DesktopAppSettings settings)
     {
-        var envPath = settings.EnvFilePath;
-        if (string.IsNullOrWhiteSpace(envPath) || !File.Exists(envPath))
-        {
-            await _log.InfoAsync($"Env file not found. EnvFilePath={envPath}");
-            return new Dictionary<string, string>();
-        }
-
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var rawLine in await File.ReadAllLinesAsync(envPath))
+        var loadedPaths = new List<string>();
+
+        foreach (var envPath in GetEnvFileLoadOrder(settings))
         {
-            var line = rawLine.Trim();
-            if (line.Length == 0 || line.StartsWith('#'))
+            if (string.IsNullOrWhiteSpace(envPath) || !File.Exists(envPath))
             {
                 continue;
             }
 
-            var separator = line.IndexOf('=');
-            if (separator <= 0)
+            foreach (var rawLine in await File.ReadAllLinesAsync(envPath))
             {
-                continue;
+                var line = rawLine.Trim();
+                if (line.Length == 0 || line.StartsWith('#'))
+                {
+                    continue;
+                }
+
+                var separator = line.IndexOf('=');
+                if (separator <= 0)
+                {
+                    continue;
+                }
+
+                var key = line[..separator].Trim();
+                var value = line[(separator + 1)..].Trim().Trim('"');
+                values[key] = value;
             }
 
-            var key = line[..separator].Trim();
-            var value = line[(separator + 1)..].Trim().Trim('"');
-            values[key] = value;
+            loadedPaths.Add(envPath);
         }
 
-        await _log.InfoAsync($"Env loaded from {envPath}. Keys={string.Join(",", values.Keys)}");
+        if (loadedPaths.Count == 0)
+        {
+            await _log.InfoAsync($"Env files not found. EnvFilePath={settings.EnvFilePath}");
+        }
+        else
+        {
+            await _log.InfoAsync($"Env loaded from {string.Join(", ", loadedPaths)}. KeyCount={values.Count}");
+        }
+
         return values;
     }
 
@@ -154,11 +167,23 @@ public sealed class AppSettingsService
     private static bool ApplyPortableDefaults(DesktopAppSettings settings)
     {
         var changed = false;
+        var bundledWebAppPath = FindBundledWebAppPath();
 
-        if (string.IsNullOrWhiteSpace(settings.WebAppPath) || !IsRunnableWebAppPath(settings.WebAppPath))
+        if (!string.IsNullOrWhiteSpace(bundledWebAppPath)
+            && (string.IsNullOrWhiteSpace(settings.WebAppPath)
+                || !IsRunnableWebAppPath(settings.WebAppPath)
+                || IsKnownLegacyWebAppPath(settings.WebAppPath)))
+        {
+            if (!PathsEqual(settings.WebAppPath, bundledWebAppPath))
+            {
+                settings.WebAppPath = bundledWebAppPath;
+                changed = true;
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(settings.WebAppPath) || !IsRunnableWebAppPath(settings.WebAppPath))
         {
             var webAppPath = FindWebAppPath();
-            if (!string.IsNullOrWhiteSpace(webAppPath) && settings.WebAppPath != webAppPath)
+            if (!string.IsNullOrWhiteSpace(webAppPath) && !PathsEqual(settings.WebAppPath, webAppPath))
             {
                 settings.WebAppPath = webAppPath;
                 changed = true;
@@ -206,6 +231,20 @@ public sealed class AppSettingsService
         return changed;
     }
 
+    private static string FindBundledWebAppPath()
+    {
+        foreach (var root in EnumerateSearchRoots())
+        {
+            var fullPath = Path.GetFullPath(Path.Combine(root, "apps", "web"));
+            if (IsRunnableWebAppPath(fullPath))
+            {
+                return fullPath;
+            }
+        }
+
+        return string.Empty;
+    }
+
     private static string FindWebAppPath()
     {
         foreach (var root in EnumerateSearchRoots())
@@ -239,8 +278,52 @@ public sealed class AppSettingsService
             && File.Exists(Path.Combine(path, "node_modules", "next", "dist", "bin", "next"));
     }
 
+    private static bool IsKnownLegacyWebAppPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        foreach (var root in EnumerateSearchRoots())
+        {
+            foreach (var candidate in new[]
+            {
+                Path.Combine(root, "addon-chat-builder"),
+                Path.Combine(root, "..", "addon-chat-builder")
+            })
+            {
+                if (PathsEqual(path, Path.GetFullPath(candidate)))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        return string.Equals(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string FindEnvFilePath()
     {
+        var userEnvPath = GetUserEnvFilePath();
+        if (File.Exists(userEnvPath))
+        {
+            return userEnvPath;
+        }
+
         foreach (var root in EnumerateSearchRoots())
         {
             foreach (var candidate in new[]
@@ -259,6 +342,61 @@ public sealed class AppSettingsService
         }
 
         return string.Empty;
+    }
+
+    private static IEnumerable<string> GetEnvFileLoadOrder(DesktopAppSettings settings)
+    {
+        var emittedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sharedEnvPath in EnumerateSharedEnvFilePaths())
+        {
+            if (emittedPaths.Add(NormalizePath(sharedEnvPath)))
+            {
+                yield return sharedEnvPath;
+            }
+        }
+
+        var userEnvPath = GetUserEnvFilePath();
+        if (!string.IsNullOrWhiteSpace(userEnvPath) && emittedPaths.Add(NormalizePath(userEnvPath)))
+        {
+            yield return userEnvPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.EnvFilePath)
+            && emittedPaths.Add(NormalizePath(settings.EnvFilePath)))
+        {
+            yield return settings.EnvFilePath;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateSharedEnvFilePaths()
+    {
+        foreach (var root in EnumerateSearchRoots())
+        {
+            foreach (var candidate in new[]
+            {
+                Path.Combine(root, ".env"),
+                Path.Combine(root, "addon-chat-builder-desktop", ".env"),
+                Path.Combine(root, "..", "addon-chat-builder-desktop", ".env")
+            })
+            {
+                yield return Path.GetFullPath(candidate);
+            }
+        }
+    }
+
+    private static string GetUserEnvFilePath()
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return string.IsNullOrWhiteSpace(localAppData)
+            ? string.Empty
+            : Path.Combine(localAppData, "AddonChatBuilderDesktop", ".env");
+    }
+
+    private static string NormalizePath(string path)
+    {
+        return string.IsNullOrWhiteSpace(path)
+            ? string.Empty
+            : Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
     }
 
     private static IEnumerable<string> EnumerateSearchRoots()

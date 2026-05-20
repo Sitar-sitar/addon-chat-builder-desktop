@@ -45,6 +45,8 @@ npm run build
 
 `.env` は `apps\web` へコピーしない。APIキーなどの値は `D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\.env` に置く。デスクトップアプリ経由では起動時に環境変数として渡し、`apps\web` を直接起動した場合も同じ `.env` を参照する。
 
+ユーザー別設定が旧 `D:\my-app2\Minecraft_Addon\addon-chat-builder` を指していても、`apps\web\node_modules\next\dist\bin\next` が存在する場合は、起動時に `D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\apps\web` へ自動移行される。
+
 移行期間中は、`apps\web\node_modules\next\dist\bin\next` が存在しない場合、隣接する旧 `D:\my-app2\Minecraft_Addon\addon-chat-builder` も探索対象になる。
 
 ## デスクトップショートカット
@@ -72,6 +74,16 @@ powershell -ExecutionPolicy Bypass -File scripts\Create-PublicShortcut.ps1 -Scop
 ```
 
 既存ショートカットを上書きする場合は `-Force` を付ける。
+
+## publish
+
+家族や別Windowsユーザーが .NET Runtime を個別に入れなくても起動できるよう、配布用 publish は self-contained 形式で作成する。
+
+```powershell
+.\dotnet.cmd publish src\AddonChatBuilder.Desktop\AddonChatBuilder.Desktop.csproj -c Release -r win-x64 --self-contained true -o publish\win-x64
+```
+
+既存ショートカットは `publish\win-x64\AddonChatBuilder.Desktop.exe` を参照する。
 
 ## 設定
 
