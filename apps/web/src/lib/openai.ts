@@ -9,6 +9,8 @@ type ChatInput = {
 type ChatResult = {
   assistantMessage: string;
   spec: AddonSpec;
+  suggestedReplies: string[];
+  recommendedReply: string;
 };
 
 type RawChatResult = {
@@ -37,6 +39,8 @@ type RawChatResult = {
     };
     unresolvedQuestions: string[];
   };
+  suggestedReplies: string[];
+  recommendedReply: string;
 };
 
 export type GeneratedAddonFile = {
@@ -47,7 +51,7 @@ export type GeneratedAddonFile = {
 const schema = {
   type: "object",
   additionalProperties: false,
-  required: ["assistantMessage", "spec"],
+  required: ["assistantMessage", "spec", "suggestedReplies", "recommendedReply"],
   properties: {
     assistantMessage: { type: "string" },
     spec: {
@@ -114,7 +118,9 @@ const schema = {
         },
         unresolvedQuestions: { type: "array", items: { type: "string" } }
       }
-    }
+    },
+    suggestedReplies: { type: "array", maxItems: 4, items: { type: "string" } },
+    recommendedReply: { type: "string" }
   }
 };
 
@@ -147,7 +153,9 @@ export async function refineAddonSpec(input: ChatInput): Promise<ChatResult> {
                 "recipe, item, script は常に全項目を埋めてください。使わない種類の値は空文字、1、空配列など安全な既定値にしてください。",
                 "recipe.ingredients は { symbol, item } の配列にしてください。例: [{\"symbol\":\"#\",\"item\":\"minecraft:diamond\"}]",
                 "namespace と outputName は英小文字、数字、アンダースコア、ハイフンだけに正規化してください。",
-                "BedrockのIDは namespace:name 形式にしてください。"
+                "BedrockのIDは namespace:name 形式にしてください。",
+                "assistantMessage の冒頭で、ユーザーの希望を一度だけ短く言い換えて確認してください（おうむ返し）。冗長な繰り返しはしないでください。",
+                "ユーザーが次に答える質問について、選びやすい回答候補を suggestedReplies に2〜4個・各12文字以内で入れてください。最も無難な既定値があれば recommendedReply にその文字列を入れ、無ければ空文字にしてください。自由記述が適切な質問では suggestedReplies を空配列にしてください。"
               ].join("\n")
             }
           ]
@@ -179,9 +187,13 @@ export async function refineAddonSpec(input: ChatInput): Promise<ChatResult> {
   const data = await response.json();
   const outputText = extractOutputText(data);
   const parsed = JSON.parse(outputText) as RawChatResult;
+  const suggestedReplies = normalizeSuggestedReplies(parsed.suggestedReplies);
+  const recommendedReply = (parsed.recommendedReply ?? "").trim();
   return {
     assistantMessage: parsed.assistantMessage,
-    spec: normalizeRawSpec(parsed.spec)
+    spec: normalizeRawSpec(parsed.spec),
+    suggestedReplies,
+    recommendedReply: suggestedReplies.includes(recommendedReply) ? recommendedReply : ""
   };
 }
 
@@ -322,6 +334,21 @@ function getEnvList(name: string): string[] {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function normalizeSuggestedReplies(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+    if (result.length >= 4) break;
+  }
+  return result;
 }
 
 function extractOutputText(data: unknown): string {

@@ -98,3 +98,49 @@ export function validateSpec(spec: AddonSpec): string[] {
   return errors;
 }
 
+// 設計図(blueprintRows)と canBuild の完了判定を一致させるための、行レベルの検証述語。
+// validateSpec が見るブロッキング項目を固定順で返す（displayName / summary は非ブロッキングなので含めない）。
+// 不変条件: specChecks(spec).every(c => c.ok) === (validateSpec(spec).length === 0)
+// この同値性は tests/unit/addon-view.test.ts で担保する。validateSpec を変更する場合は本関数も合わせること。
+export type SpecCheck = {
+  key: string;
+  label: string;
+  value: string;
+  ok: boolean;
+};
+
+export function specChecks(spec: AddonSpec): SpecCheck[] {
+  const checks: SpecCheck[] = [
+    { key: "kind", label: "種類", value: spec.kind, ok: ["recipe", "item", "script"].includes(spec.kind) },
+    { key: "title", label: "名前", value: spec.title.trim(), ok: !!spec.title.trim() },
+    { key: "description", label: "説明", value: spec.description.trim(), ok: !!spec.description.trim() }
+  ];
+
+  if (spec.kind === "recipe") {
+    const r = spec.recipe;
+    checks.push(
+      { key: "resultItem", label: "完成品", value: r?.resultItem ?? "", ok: !!r && r.resultItem.includes(":") },
+      { key: "resultCount", label: "個数", value: r ? String(r.resultCount) : "", ok: !!r && r.resultCount >= 1 && r.resultCount <= 64 },
+      { key: "pattern", label: "形", value: r ? r.pattern.join(" / ") : "", ok: !!r && r.pattern.length >= 1 && r.pattern.length <= 3 },
+      { key: "key", label: "素材", value: r ? `${Object.keys(r.key).length}種` : "", ok: !!r && Object.keys(r.key).length >= 1 }
+    );
+  } else if (spec.kind === "item") {
+    const it = spec.item;
+    checks.push(
+      { key: "identifier", label: "ID", value: it?.identifier ?? "", ok: !!it && it.identifier.includes(":") },
+      { key: "maxStackSize", label: "最大スタック", value: it ? String(it.maxStackSize) : "", ok: !!it && it.maxStackSize >= 1 && it.maxStackSize <= 64 }
+    );
+  } else if (spec.kind === "script") {
+    const s = spec.script;
+    checks.push(
+      { key: "event", label: "イベント", value: s?.event ?? "", ok: !!s && ["itemUse", "blockBreak", "interval"].includes(s.event) }
+    );
+  }
+
+  checks.push(
+    { key: "namespace", label: "namespace", value: spec.namespace, ok: /^[a-z][a-z0-9_]*$/.test(spec.namespace) },
+    { key: "outputName", label: "出力名", value: spec.outputName, ok: /^[a-z0-9][a-z0-9_-]*$/.test(spec.outputName) }
+  );
+
+  return checks;
+}
