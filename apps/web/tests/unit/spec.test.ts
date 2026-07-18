@@ -14,6 +14,19 @@ function javaScript(intervalSeconds: number, event: "interval" | "itemUse" = "in
   };
 }
 
+function javaRecipe(pattern: string[], key: Record<string, string>): AddonSpec {
+  return {
+    edition: "java",
+    title: "レシピ",
+    description: "確認用レシピ",
+    kind: "recipe",
+    namespace: "recipes",
+    outputName: "recipe",
+    recipe: { resultItem: "minecraft:stick", resultCount: 1, pattern, key },
+    unresolvedQuestions: []
+  };
+}
+
 describe("validateSpec Java版", () => {
   it.each([
     [4, false],
@@ -54,6 +67,40 @@ describe("validateSpec Java版", () => {
       "Java版の完成アイテムは minecraft: のバニラIDにしてください。",
       "Java版のレシピ素材は minecraft: のバニラIDにしてください。"
     ]));
+  });
+
+  it.each([
+    {
+      name: "行幅不一致",
+      spec: javaRecipe(["#", "##"], { "#": "minecraft:diamond" }),
+      error: "Java版のレシピパターンは全行を同じ幅にしてください。"
+    },
+    {
+      name: "空行",
+      spec: javaRecipe([""], { "#": "minecraft:diamond" }),
+      error: "Java版のレシピパターンは各行1から3文字にしてください。"
+    },
+    {
+      name: "4文字行",
+      spec: javaRecipe(["####"], { "#": "minecraft:diamond" }),
+      error: "Java版のレシピパターンは各行1から3文字にしてください。"
+    },
+    {
+      name: "未定義記号",
+      spec: javaRecipe(["X"], { "#": "minecraft:diamond" }),
+      error: "Java版のレシピパターンで未定義の素材記号を使用しています。"
+    },
+    {
+      name: "複数文字key",
+      spec: javaRecipe(["#"], { "##": "minecraft:diamond" }),
+      error: "Java版のレシピ素材記号は1文字で指定してください。"
+    }
+  ])("Javaレシピのpattern/key整合を検証する: $name", ({ spec, error }) => {
+    expect(validateSpec(spec)).toContain(error);
+  });
+
+  it("pattern内の空白は素材記号として扱わない", () => {
+    expect(validateSpec(javaRecipe([" #", "# "], { "#": "minecraft:diamond" }))).toEqual([]);
   });
 
   it("langEntriesの不正key・空value・重複を拒否する", () => {

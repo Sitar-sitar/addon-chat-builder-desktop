@@ -58,6 +58,17 @@ const resourcepack: AddonSpec = {
   unresolvedQuestions: []
 };
 
+const malformedJavaRecipe: AddonSpec = {
+  ...completeRecipe,
+  edition: "java",
+  recipe: {
+    resultItem: "minecraft:stick",
+    resultCount: 1,
+    pattern: ["#", "##"],
+    key: { "#": "minecraft:diamond" }
+  }
+};
+
 const blockingIncomplete = (spec: AddonSpec) =>
   blueprintRows(spec, "1.21.5").filter((row) => row.status === "current" || row.status === "pending").length;
 
@@ -99,7 +110,16 @@ describe("blueprintRows", () => {
 
   it("未完了ゼロとvalidateSpec成功が同値", () => {
     const partial: AddonSpec = { ...completeRecipe, namespace: "1bad" };
-    for (const spec of [createEmptySpec(), completeRecipe, completeItem, completeScript, javaScript, resourcepack, partial]) {
+    for (const spec of [
+      createEmptySpec(),
+      completeRecipe,
+      completeItem,
+      completeScript,
+      javaScript,
+      resourcepack,
+      malformedJavaRecipe,
+      partial
+    ]) {
       expect(blockingIncomplete(spec) === 0).toBe(validateSpec(spec).length === 0);
     }
   });

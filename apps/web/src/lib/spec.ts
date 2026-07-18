@@ -115,6 +115,19 @@ function validateRecipe(spec: AddonSpec, errors: string[]): void {
   }
 
   if (spec.edition === "java") {
+    const rowLengths = spec.recipe.pattern.map((row) => row.length);
+    if (rowLengths.some((length) => length < 1 || length > 3)) {
+      errors.push("Java版のレシピパターンは各行1から3文字にしてください。");
+    }
+    if (new Set(rowLengths).size > 1) {
+      errors.push("Java版のレシピパターンは全行を同じ幅にしてください。");
+    }
+    if (!hasOnlyDefinedRecipeSymbols(spec.recipe)) {
+      errors.push("Java版のレシピパターンで未定義の素材記号を使用しています。");
+    }
+    if (!hasSingleCharacterRecipeKeys(spec.recipe)) {
+      errors.push("Java版のレシピ素材記号は1文字で指定してください。");
+    }
     if (!spec.recipe.resultItem.startsWith("minecraft:")) {
       errors.push("Java版の完成アイテムは minecraft: のバニラIDにしてください。");
     }
@@ -193,6 +206,26 @@ function editionKindError(edition: Edition, kind: AddonKind): string {
   return "リソースパックは Java版のみ対応です。";
 }
 
+type RecipeSpec = NonNullable<AddonSpec["recipe"]>;
+
+function hasOnlyDefinedRecipeSymbols(recipe: RecipeSpec): boolean {
+  const patternSymbols = new Set(recipe.pattern.join("").split("").filter((symbol) => symbol !== " "));
+  return [...patternSymbols].every((symbol) => Object.prototype.hasOwnProperty.call(recipe.key, symbol));
+}
+
+function hasSingleCharacterRecipeKeys(recipe: RecipeSpec): boolean {
+  return Object.keys(recipe.key).every((symbol) => symbol.length === 1);
+}
+
+function isJavaRecipePatternValid(recipe: RecipeSpec): boolean {
+  const rowLengths = recipe.pattern.map((row) => row.length);
+  return (
+    rowLengths.every((length) => length >= 1 && length <= 3) &&
+    new Set(rowLengths).size === 1 &&
+    hasOnlyDefinedRecipeSymbols(recipe)
+  );
+}
+
 // blueprintRows と canBuild の完了判定を一致させる行レベル述語。
 // 不変条件: specChecks(spec).every(c => c.ok) === (validateSpec(spec).length === 0)
 export type SpecCheck = {
@@ -238,7 +271,11 @@ export function specChecks(spec: AddonSpec): SpecCheck[] {
         key: "pattern",
         label: "形",
         value: recipe ? recipe.pattern.join(" / ") : "",
-        ok: !!recipe && recipe.pattern.length >= 1 && recipe.pattern.length <= 3
+        ok:
+          !!recipe &&
+          recipe.pattern.length >= 1 &&
+          recipe.pattern.length <= 3 &&
+          (spec.edition !== "java" || isJavaRecipePatternValid(recipe))
       },
       {
         key: "key",
@@ -247,7 +284,9 @@ export function specChecks(spec: AddonSpec): SpecCheck[] {
         ok:
           !!recipe &&
           Object.keys(recipe.key).length >= 1 &&
-          (spec.edition !== "java" || Object.values(recipe.key).every((item) => item.startsWith("minecraft:")))
+          (spec.edition !== "java" ||
+            (hasSingleCharacterRecipeKeys(recipe) &&
+              Object.values(recipe.key).every((item) => item.startsWith("minecraft:"))))
       }
     );
   } else if (spec.kind === "item") {

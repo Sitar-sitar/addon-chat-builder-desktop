@@ -68,4 +68,28 @@ describe("buildPack Java版", () => {
     await expect(buildPack(spec, outputDir)).rejects.toThrow("1.21.999 は未対応です");
     expect(await fs.readdir(outputDir)).toEqual([]);
   });
+
+  it("patternとkeyが不整合なレシピではzipを作らない", async () => {
+    process.env.JAVA_TARGET_VERSION = "1.21.5";
+    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "addon-pack-output-"));
+    tempDirs.push(outputDir);
+    const spec: AddonSpec = {
+      edition: "java",
+      title: "不正レシピ",
+      description: "行幅が一致しないレシピ",
+      kind: "recipe",
+      namespace: "sample",
+      outputName: "invalid-recipe",
+      recipe: {
+        resultItem: "minecraft:stick",
+        resultCount: 1,
+        pattern: ["#", "##"],
+        key: { "#": "minecraft:diamond" }
+      },
+      unresolvedQuestions: []
+    };
+
+    await expect(buildPack(spec, outputDir)).rejects.toThrow("全行を同じ幅にしてください");
+    expect(await fs.readdir(outputDir)).toEqual([]);
+  });
 });
