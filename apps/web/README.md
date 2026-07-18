@@ -1,6 +1,6 @@
 # addon-chat-builder
 
-ChatGPT API と対話しながら、Minecraft Bedrock Edition 用の小さなアドオンを作るローカルWebアプリです。
+ChatGPT API と対話しながらMinecraft Bedrock Edition用アドオンの仕様を整理・生成し、Minecraft Java Edition用の小さなデータパック／リソースパックも作れるローカルWebアプリです。
 
 ## 採用方針
 
@@ -9,6 +9,7 @@ ChatGPT API と対話しながら、Minecraft Bedrock Edition 用の小さなア
 - 対話による仕様整理は通常モデル、アドオンのファイル実装は Codex モデルを使います。
 - アドオン実装時の reasoning effort は `low` 固定です。
 - Codex が生成したファイルは、許可パスと拡張子を検証してから `.mcpack` 化します。
+- Java版は固定テンプレートで決定論的に生成し、`JAVA_TARGET_VERSION` の対応表にない版は拒否します。
 
 ## 代替案との比較
 
@@ -18,8 +19,8 @@ ChatGPT API と対話しながら、Minecraft Bedrock Edition 用の小さなア
 
 ## トレードオフ
 
-- 初期対応はレシピ追加、簡単なアイテム追加、Script API の単純イベント処理に絞っています。
-- 複雑なモデル、テクスチャ、リソースパック生成は後から追加する前提です。
+- Bedrock版はレシピ追加、簡単なアイテム追加、Script API の単純イベント処理に対応します。
+- Java版は作業台レシピ、一定間隔のチャット通知、バニラアイテム／ブロックの表示名変更に対応します。Modを必要とする独自アイテム追加には対応しません。
 - 出力先は画面で変更できますが、PC上の既存フォルダを指定してください。
 
 ## セットアップ
@@ -32,6 +33,15 @@ npm run dev
 
 `API.env` または `.env` の `OPENAI_API_KEY` に、現在のOpenAIアカウントで作成したAPIキーを設定してください。
 チャット上に貼ったキーは使わず、OpenAI Platformで無効化してから新しいキーを入れてください。
+
+Java版の設定例:
+
+```dotenv
+DEFAULT_OUTPUT_DIR_JAVA=D:\my-app2\Minecraft_Addon\javaパックファイル
+JAVA_TARGET_VERSION=1.21.7
+```
+
+対応バージョンは `1.21`、`1.21.4`、`1.21.5`、`1.21.7`。このPCの導入済みJava 1.21.5で確認する場合は `JAVA_TARGET_VERSION=1.21.5` とする。
 
 ## ショートカット起動
 
@@ -48,4 +58,5 @@ npm run dev
 
 ## 既定出力先
 
-- `D:\my-app2\Minecraft_Addon\mcpackファイル`
+- Bedrock: `D:\my-app2\Minecraft_Addon\mcpackファイル`（`*.mcpack`）
+- Javaデータパック／リソースパック: `D:\my-app2\Minecraft_Addon\javaパックファイル`（`*-datapack.zip` / `*-resourcepack.zip`）

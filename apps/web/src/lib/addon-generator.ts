@@ -2,49 +2,62 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import AdmZip from "adm-zip";
-import { AddonSpec, validateSpec } from "./spec";
+import { generateJavaFiles } from "./java-generator";
+import {
+  isAllowedBedrockPath,
+  OUTPUT_SUFFIX,
+  resolvePackType
+} from "./pack-rules";
+import type { GeneratedPackFile } from "./pack-rules";
 import { isSafeOutputDir, resolveOutputDir } from "./paths";
-import { GeneratedAddonFile, generateAddonFilesWithCodex } from "./openai";
+import { AddonSpec, validateSpec } from "./spec";
+import { generateAddonFilesWithCodex } from "./openai";
 
-type BuildResult = {
-  mcpackPath: string;
+export type BuildResult = {
+  packPath: string;
   files: string[];
 };
 
-export async function buildMcpack(spec: AddonSpec, outputDirInput: string): Promise<BuildResult> {
+export async function buildPack(spec: AddonSpec, outputDirInput: string): Promise<BuildResult> {
   const errors = validateSpec(spec);
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
 
-  const outputDir = resolveOutputDir(outputDirInput);
+  const outputDir = resolveOutputDir(outputDirInput, spec.edition);
   if (!isSafeOutputDir(outputDir)) {
     throw new Error("出力先フォルダが不正です。");
   }
 
   await fs.mkdir(outputDir, { recursive: true });
-
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "addon-chat-builder-"));
 
   try {
     const packDir = path.join(tempRoot, "pack");
     await fs.mkdir(packDir, { recursive: true });
 
-    const generatedFiles = await generateAddonFilesWithCodex(spec);
-    const files = await writeGeneratedFiles(packDir, generatedFiles);
-    const mcpackPath = path.join(outputDir, `${spec.outputName}.mcpack`);
+    const generatedFiles = spec.edition === "java"
+      ? generateJavaFiles(spec)
+      : await generateAddonFilesWithCodex(spec);
+    const files = await writeGeneratedFiles(packDir, generatedFiles, spec.edition === "bedrock");
+    const packType = resolvePackType(spec);
+    const packPath = path.join(outputDir, `${spec.outputName}${OUTPUT_SUFFIX[packType]}`);
     const zip = new AdmZip();
     zip.addLocalFolder(packDir);
-    zip.writeZip(mcpackPath);
+    zip.writeZip(packPath);
 
-    return { mcpackPath, files };
+    return { packPath, files };
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
 }
 
-async function writeGeneratedFiles(packDir: string, generatedFiles: GeneratedAddonFile[]): Promise<string[]> {
-  validateGeneratedFiles(generatedFiles);
+async function writeGeneratedFiles(
+  packDir: string,
+  generatedFiles: GeneratedPackFile[],
+  enforceBedrockRules: boolean
+): Promise<string[]> {
+  validateGeneratedFiles(generatedFiles, enforceBedrockRules);
   const files: string[] = [];
 
   for (const file of generatedFiles) {
@@ -55,8 +68,9 @@ async function writeGeneratedFiles(packDir: string, generatedFiles: GeneratedAdd
   return files;
 }
 
-function validateGeneratedFiles(files: GeneratedAddonFile[]): void {
-  if (!files.some((file) => file.path === "manifest.json")) {
+function validateGeneratedFiles(files: GeneratedPackFile[], enforceBedrockRules: boolean): void {
+  const normalizedPaths = new Set<string>();
+  if (enforceBedrockRules && !files.some((file) => file.path === "manifest.json")) {
     throw new Error("Codex生成結果に manifest.json が含まれていません。");
   }
 
@@ -65,32 +79,27 @@ function validateGeneratedFiles(files: GeneratedAddonFile[]): void {
     if (path.isAbsolute(file.path) || normalized.includes("../") || normalized.startsWith("/")) {
       throw new Error(`不正なファイルパスです: ${file.path}`);
     }
-    if (!isAllowedPackPath(normalized)) {
+    if (normalizedPaths.has(normalized)) {
+      throw new Error(`ファイルパスが重複しています: ${file.path}`);
+    }
+    normalizedPaths.add(normalized);
+    if (enforceBedrockRules && !isAllowedBedrockPath(normalized)) {
       throw new Error(`許可されていないファイルパスです: ${file.path}`);
     }
     if (file.content.length > 80_000) {
       throw new Error(`ファイルサイズが大きすぎます: ${file.path}`);
     }
-    if (normalized.endsWith(".json")) {
+    if (normalized.endsWith(".json") || normalized === "pack.mcmeta") {
       try {
         JSON.parse(file.content);
       } catch {
         throw new Error(`JSONとして解析できません: ${file.path}`);
       }
     }
-    if (normalized.endsWith(".js") && hasUnsafeScriptContent(file.content)) {
+    if (enforceBedrockRules && normalized.endsWith(".js") && hasUnsafeScriptContent(file.content)) {
       throw new Error(`安全でない可能性があるスクリプトを検出しました: ${file.path}`);
     }
   }
-}
-
-function isAllowedPackPath(filePath: string): boolean {
-  if (filePath === "manifest.json" || filePath === "README.txt") return true;
-  return (
-    /^recipes\/[a-z0-9_-]+\.json$/.test(filePath) ||
-    /^items\/[a-z0-9_-]+\.json$/.test(filePath) ||
-    /^scripts\/[a-z0-9_-]+\.js$/.test(filePath)
-  );
 }
 
 function hasUnsafeScriptContent(content: string): boolean {

@@ -1,6 +1,6 @@
 # addon-chat-builder-desktop
 
-Minecraft Bedrock アドオン作成支援アプリ `addon-chat-builder` を、家族・別Windowsユーザーが扱いやすい専用デスクトップアプリとして起動するための .NET + WebView2 プロジェクト。
+Minecraft Bedrock アドオン／Javaパック作成支援アプリ `addon-chat-builder` を、家族・別Windowsユーザーが扱いやすい専用デスクトップアプリとして起動するための .NET + WebView2 プロジェクト。
 
 Next.js アプリ本体は `apps/web` で管理し、デスクトップ版は起動・停止・WebView表示・Windows標準UI連携を担当する。
 
@@ -29,6 +29,13 @@ npm run build
 
 `.env` はGit管理しない。必要なキーは `D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\.env` に置く。デスクトップアプリ経由では起動時に環境変数として渡し、`apps\web` を直接起動した場合も同じ `.env` を参照する。
 
+Java版ではレシピ・一定間隔のチャット通知をデータパック、表示名変更をリソースパックとして決定論的に生成する。対象バージョンは `JAVA_TARGET_VERSION` で厳密に指定し、未対応値は生成前に拒否する。このPCの実機確認用設定は `1.21.5`、未設定時の既定値は `1.21.7`。
+
+既定出力先は次のとおり。
+
+- Bedrock: `D:\my-app2\Minecraft_Addon\mcpackファイル`
+- Java: `D:\my-app2\Minecraft_Addon\javaパックファイル`
+
 ## .NET SDK
 
 このプロジェクトでは、共通方針どおり `C:\Program Files\dotnet\sdk` に入れた .NET SDK を使う。プロジェクト専用の `.dotnet` フォルダは作らない。
@@ -49,4 +56,4 @@ dotnet --info
 
 `global.json` で SDK `8.0.421` を固定しているため、別PCでも同じ SDK を入れれば挙動を揃えやすい。
 
-まずは [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) を仕様書として実装する。
+Java版対応の正本は [機能設計書_Java版対応_2026-07-18.md](docs/機能設計書_Java版対応_2026-07-18.md)。

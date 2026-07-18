@@ -1,8 +1,10 @@
-import { AddonSpec, emptySpec } from "./spec";
+import { AddonSpec, createEmptySpec, type Edition } from "./spec";
 import { getEnvValue } from "./env";
+import type { GeneratedPackFile } from "./pack-rules";
 
 type ChatInput = {
   messages: { role: "user" | "assistant"; content: string }[];
+  edition: Edition;
   currentSpec?: AddonSpec;
 };
 
@@ -16,9 +18,10 @@ type ChatResult = {
 type RawChatResult = {
   assistantMessage: string;
   spec: {
+    edition: Edition;
     title: string;
     description: string;
-    kind: "recipe" | "item" | "script";
+    kind: "recipe" | "item" | "script" | "resourcepack";
     namespace: string;
     outputName: string;
     recipe: {
@@ -36,6 +39,10 @@ type RawChatResult = {
       event: "itemUse" | "blockBreak" | "interval";
       summary: string;
       message: string;
+      intervalSeconds: number;
+    };
+    resourcepack: {
+      langEntries: { key: string; value: string }[];
     };
     unresolvedQuestions: string[];
   };
@@ -43,12 +50,7 @@ type RawChatResult = {
   recommendedReply: string;
 };
 
-export type GeneratedAddonFile = {
-  path: string;
-  content: string;
-};
-
-const schema = {
+export const chatResponseSchema = {
   type: "object",
   additionalProperties: false,
   required: ["assistantMessage", "spec", "suggestedReplies", "recommendedReply"],
@@ -58,6 +60,7 @@ const schema = {
       type: "object",
       additionalProperties: false,
       required: [
+        "edition",
         "title",
         "description",
         "kind",
@@ -66,12 +69,14 @@ const schema = {
         "recipe",
         "item",
         "script",
+        "resourcepack",
         "unresolvedQuestions"
       ],
       properties: {
+        edition: { type: "string", enum: ["bedrock", "java"] },
         title: { type: "string" },
         description: { type: "string" },
-        kind: { type: "string", enum: ["recipe", "item", "script"] },
+        kind: { type: "string", enum: ["recipe", "item", "script", "resourcepack"] },
         namespace: { type: "string" },
         outputName: { type: "string" },
         recipe: {
@@ -109,11 +114,31 @@ const schema = {
         script: {
           type: "object",
           additionalProperties: false,
-          required: ["event", "summary", "message"],
+          required: ["event", "summary", "message", "intervalSeconds"],
           properties: {
             event: { type: "string", enum: ["itemUse", "blockBreak", "interval"] },
             summary: { type: "string" },
-            message: { type: "string" }
+            message: { type: "string" },
+            intervalSeconds: { type: "number" }
+          }
+        },
+        resourcepack: {
+          type: "object",
+          additionalProperties: false,
+          required: ["langEntries"],
+          properties: {
+            langEntries: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["key", "value"],
+                properties: {
+                  key: { type: "string" },
+                  value: { type: "string" }
+                }
+              }
+            }
           }
         },
         unresolvedQuestions: { type: "array", items: { type: "string" } }
@@ -131,7 +156,21 @@ export async function refineAddonSpec(input: ChatInput): Promise<ChatResult> {
   }
 
   const model = getEnvValue("OPENAI_CHAT_MODEL") || getEnvValue("OPENAI_MODEL") || "gpt-5.4-mini";
-  const currentSpec = input.currentSpec ?? emptySpec;
+  const currentSpec = input.currentSpec
+    ? { ...input.currentSpec, edition: input.edition }
+    : createEmptySpec(input.edition);
+  const editionPrompt = input.edition === "java"
+    ? [
+        "あなたはMinecraft Java Editionの小規模パック作成を支援する設計担当です。",
+        "対応範囲は recipe、script(interval)、resourcepack(langEntries)です。itemは対応外なので、表示名変更ならresourcepack、アイテム追加なら統合版かModを提案してください。",
+        "recipeの完成品と素材は minecraft: で始まるバニラIDだけを使ってください。",
+        "scriptは5〜3600秒のintervalだけです。未指定なら60秒を提案し、intervalSecondsへ入れてください。",
+        "resourcepackのkeyは item.minecraft.* または block.minecraft.* だけを使ってください。"
+      ]
+    : [
+        "あなたはMinecraft Bedrock Editionの小規模アドオン作成を支援する設計担当です。",
+        "初期版の対応範囲は recipe, item, script の3種類だけです。"
+      ];
 
   const response = await fetchOpenAiResponse({
     apiKey,
@@ -146,11 +185,10 @@ export async function refineAddonSpec(input: ChatInput): Promise<ChatResult> {
             {
               type: "input_text",
               text: [
-                "あなたはMinecraft Bedrock Editionの小規模アドオン作成を支援する設計担当です。",
+                ...editionPrompt,
                 "ユーザーの曖昧な希望を、実装可能な仕様へ短く具体化してください。",
-                "初期版の対応範囲は recipe, item, script の3種類だけです。",
                 "不明点がある場合は unresolvedQuestions に残し、assistantMessage では次に答えてほしいことを1から3個だけ聞いてください。",
-                "recipe, item, script は常に全項目を埋めてください。使わない種類の値は空文字、1、空配列など安全な既定値にしてください。",
+                "edition, recipe, item, script, resourcepack は常に全項目を埋めてください。使わない種類の値は空文字、1、60、空配列など安全な既定値にしてください。",
                 "recipe.ingredients は { symbol, item } の配列にしてください。例: [{\"symbol\":\"#\",\"item\":\"minecraft:diamond\"}]",
                 "namespace と outputName は英小文字、数字、アンダースコア、ハイフンだけに正規化してください。",
                 "BedrockのIDは namespace:name 形式にしてください。",
@@ -178,7 +216,7 @@ export async function refineAddonSpec(input: ChatInput): Promise<ChatResult> {
           type: "json_schema",
           name: "addon_chat_result",
           strict: true,
-          schema
+          schema: chatResponseSchema
         }
       }
     })
@@ -191,13 +229,13 @@ export async function refineAddonSpec(input: ChatInput): Promise<ChatResult> {
   const recommendedReply = (parsed.recommendedReply ?? "").trim();
   return {
     assistantMessage: parsed.assistantMessage,
-    spec: normalizeRawSpec(parsed.spec),
+    spec: normalizeRawSpec(parsed.spec, input.edition),
     suggestedReplies,
     recommendedReply: suggestedReplies.includes(recommendedReply) ? recommendedReply : ""
   };
 }
 
-export async function generateAddonFilesWithCodex(spec: AddonSpec): Promise<GeneratedAddonFile[]> {
+export async function generateAddonFilesWithCodex(spec: AddonSpec): Promise<GeneratedPackFile[]> {
   const apiKey = getEnvValue("OPENAI_API_KEY");
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY が未設定です。.env または API.env を確認してください。");
@@ -273,7 +311,7 @@ export async function generateAddonFilesWithCodex(spec: AddonSpec): Promise<Gene
 
   const data = await response.json();
   const outputText = extractOutputText(data);
-  const parsed = JSON.parse(outputText) as { files: GeneratedAddonFile[] };
+  const parsed = JSON.parse(outputText) as { files: GeneratedPackFile[] };
   return parsed.files;
 }
 
@@ -378,7 +416,7 @@ function extractOutputText(data: unknown): string {
   throw new Error("OpenAI API のテキスト出力が見つかりません。");
 }
 
-function normalizeRawSpec(raw: RawChatResult["spec"]): AddonSpec {
+export function normalizeRawSpec(raw: RawChatResult["spec"], lockedEdition: Edition): AddonSpec {
   const recipeKey = Object.fromEntries(
     raw.recipe.ingredients
       .filter((ingredient) => ingredient.symbol.trim() && ingredient.item.trim())
@@ -386,6 +424,7 @@ function normalizeRawSpec(raw: RawChatResult["spec"]): AddonSpec {
   );
 
   return {
+    edition: lockedEdition,
     title: raw.title,
     description: raw.description,
     kind: raw.kind,
@@ -401,7 +440,7 @@ function normalizeRawSpec(raw: RawChatResult["spec"]): AddonSpec {
           }
         : undefined,
     item:
-      raw.kind === "item"
+      lockedEdition === "bedrock" && raw.kind === "item"
         ? {
             identifier: raw.item.identifier,
             displayName: raw.item.displayName,
@@ -413,7 +452,16 @@ function normalizeRawSpec(raw: RawChatResult["spec"]): AddonSpec {
         ? {
             event: raw.script.event,
             summary: raw.script.summary,
-            message: raw.script.message
+            message: raw.script.message,
+            intervalSeconds: raw.script.intervalSeconds
+          }
+        : undefined,
+    resourcepack:
+      lockedEdition === "java" && raw.kind === "resourcepack"
+        ? {
+            langEntries: raw.resourcepack.langEntries
+              .map((entry) => ({ key: entry.key.trim(), value: entry.value.trim() }))
+              .filter((entry) => entry.key || entry.value)
           }
         : undefined,
     unresolvedQuestions: raw.unresolvedQuestions

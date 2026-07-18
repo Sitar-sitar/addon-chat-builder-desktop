@@ -9,7 +9,7 @@ import {
   IconPlayerPlay,
   IconRefresh
 } from "@tabler/icons-react";
-import { AddonSpec, emptySpec, validateSpec } from "@/lib/spec";
+import { AddonSpec, createEmptySpec, type Edition, validateSpec } from "@/lib/spec";
 import { blueprintRows, stepState, type StepStatus } from "@/utils/addon-view";
 
 type Message = {
@@ -18,18 +18,26 @@ type Message = {
 };
 
 type BuildResult = {
-  mcpackPath: string;
+  packPath: string;
   files: string[];
 };
 
-const starterPrompts = ["雷を出せる槍を作りたい", "新しいアイテムを追加したい", "特定の行動をしたらチャットに通知したい"];
+const starterPrompts: Record<Edition, string[]> = {
+  bedrock: ["雷を出せる槍を作りたい", "新しいアイテムを追加したい", "特定の行動をしたらチャットに通知したい"],
+  java: ["新しい武器レシピを作りたい", "アイテムの表示名を変えたい（リソースパック）", "1分ごとにチャットへメッセージを流したい"]
+};
 
-const initialMessage = "作りたいアドオンを1文で教えてください。まだ曖昧でも大丈夫です。";
+function initialMessage(edition: Edition): string {
+  return edition === "java"
+    ? "Java版で作りたいデータパックやリソースパックを1文で教えてください。"
+    : "作りたいアドオンを1文で教えてください。まだ曖昧でも大丈夫です。";
+}
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: initialMessage }]);
+  const [edition, setEdition] = useState<Edition>("bedrock");
+  const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: initialMessage("bedrock") }]);
   const [input, setInput] = useState("");
-  const [spec, setSpec] = useState<AddonSpec>(emptySpec);
+  const [spec, setSpec] = useState<AddonSpec>(() => createEmptySpec("bedrock"));
   const [outputDir, setOutputDir] = useState("");
   const [isChatting, setIsChatting] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
@@ -37,20 +45,43 @@ export default function Home() {
   const [buildResult, setBuildResult] = useState<BuildResult | null>(null);
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
   const [recommendedReply, setRecommendedReply] = useState("");
+  const [javaTargetVersion, setJavaTargetVersion] = useState("");
+  const [configError, setConfigError] = useState("");
 
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const generationRef = useRef(0);
 
   const specErrors = useMemo(() => validateSpec(spec), [spec]);
   const canBuild = specErrors.length === 0;
   const hasStarted = messages.some((message) => message.role === "user");
   const step = stepState({ hasStarted, canBuild, built: !!buildResult });
-  const rows = useMemo(() => blueprintRows(spec), [spec]);
+  const rows = useMemo(() => blueprintRows(spec, javaTargetVersion), [spec, javaTargetVersion]);
   const remaining = rows.filter((row) => row.status === "current" || row.status === "pending").length;
+  const isBusy = isChatting || isBuilding || isSelectingOutput;
 
   const lastIsAssistant = messages[messages.length - 1]?.role === "assistant";
   const showReadyCta = canBuild && !isChatting && !buildResult;
   const showChips = !showReadyCta && !isChatting && suggestedReplies.length > 0 && lastIsAssistant;
+  const buildLabel = getBuildLabel(spec);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/config")
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "Java版設定の取得に失敗しました。");
+        if (active) setJavaTargetVersion(data.javaTargetVersion);
+      })
+      .catch((caught) => {
+        if (!active) return;
+        const message = caught instanceof Error ? caught.message : "Java版設定の取得に失敗しました。";
+        setConfigError(message);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
@@ -60,6 +91,8 @@ export default function Home() {
     const trimmed = text.trim();
     if (!trimmed || isChatting) return;
 
+    const generation = generationRef.current;
+    const requestEdition = edition;
     const nextMessages: Message[] = [...messages, { role: "user", content: trimmed }];
     setMessages(nextMessages);
     setInput("");
@@ -72,20 +105,22 @@ export default function Home() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages, currentSpec: spec })
+        body: JSON.stringify({ messages: nextMessages, currentSpec: spec, edition: requestEdition })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "AI応答の取得に失敗しました。");
+      if (generation !== generationRef.current) return;
 
       setSpec(data.spec);
       setMessages([...nextMessages, { role: "assistant", content: data.assistantMessage }]);
       setSuggestedReplies(data.suggestedReplies ?? []);
       setRecommendedReply(data.recommendedReply ?? "");
     } catch (caught) {
+      if (generation !== generationRef.current) return;
       const message = caught instanceof Error ? caught.message : "AI応答の取得に失敗しました。";
       setMessages([...nextMessages, { role: "assistant", content: `エラーが発生しました。\n${message}` }]);
     } finally {
-      setIsChatting(false);
+      if (generation === generationRef.current) setIsChatting(false);
     }
   }
 
@@ -102,6 +137,7 @@ export default function Home() {
   }
 
   async function buildPack() {
+    const generation = generationRef.current;
     setBuildResult(null);
     setIsBuilding(true);
 
@@ -112,21 +148,25 @@ export default function Home() {
         body: JSON.stringify({ spec, outputDir })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "mcpack生成に失敗しました。");
+      if (!response.ok) throw new Error(data.error ?? "パック生成に失敗しました。");
+      if (generation !== generationRef.current) return;
+
       setBuildResult(data);
       setMessages((current) => [
         ...current,
-        { role: "assistant", content: `完成！ .mcpackを生成しました。\n${data.mcpackPath}` }
+        { role: "assistant", content: `完成！ ${getPackName(spec)}を生成しました。\n${data.packPath}` }
       ]);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "mcpack生成に失敗しました。";
+      if (generation !== generationRef.current) return;
+      const message = caught instanceof Error ? caught.message : "パック生成に失敗しました。";
       setMessages((current) => [...current, { role: "assistant", content: `生成に失敗しました。\n${message}` }]);
     } finally {
-      setIsBuilding(false);
+      if (generation === generationRef.current) setIsBuilding(false);
     }
   }
 
   async function selectOutputDir() {
+    const generation = generationRef.current;
     setIsSelectingOutput(true);
 
     try {
@@ -137,46 +177,81 @@ export default function Home() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "フォルダ選択に失敗しました。");
-      if (!data.canceled && data.path) {
-        setOutputDir(data.path);
-      }
+      if (generation !== generationRef.current) return;
+      if (!data.canceled && data.path) setOutputDir(data.path);
     } catch (caught) {
+      if (generation !== generationRef.current) return;
       const message = caught instanceof Error ? caught.message : "フォルダ選択に失敗しました。";
       setMessages((current) => [...current, { role: "assistant", content: `フォルダ選択に失敗しました。\n${message}` }]);
     } finally {
-      setIsSelectingOutput(false);
+      if (generation === generationRef.current) setIsSelectingOutput(false);
     }
   }
 
-  function resetAll() {
-    setMessages([{ role: "assistant", content: initialMessage }]);
+  function switchEdition(nextEdition: Edition) {
+    if (nextEdition === edition || isBusy) return;
+    if (hasStarted && !window.confirm("エディションを切り替えると現在の会話と仕様がリセットされます。続けますか？")) {
+      return;
+    }
+    resetWorkspace(nextEdition);
+  }
+
+  function resetWorkspace(nextEdition: Edition) {
+    generationRef.current += 1;
+    setEdition(nextEdition);
+    setMessages([{ role: "assistant", content: initialMessage(nextEdition) }]);
     setInput("");
-    setSpec(emptySpec);
+    setSpec(createEmptySpec(nextEdition));
     setOutputDir("");
     setBuildResult(null);
     setSuggestedReplies([]);
     setRecommendedReply("");
+    setIsChatting(false);
+    setIsBuilding(false);
+    setIsSelectingOutput(false);
   }
 
   return (
     <main className="app-shell">
       <section className="topbar">
         <div>
-          <p className="eyebrow">MINECRAFT BEDROCK</p>
+          <p className="eyebrow">{edition === "java" ? "MINECRAFT JAVA EDITION" : "MINECRAFT BEDROCK"}</p>
           <h1>ADDON CHAT BUILDER</h1>
         </div>
         <div className="topbar-right">
+          <div className="edition-switch" role="group" aria-label="Minecraftエディション">
+            <button
+              className={edition === "bedrock" ? "active" : ""}
+              type="button"
+              aria-pressed={edition === "bedrock"}
+              onClick={() => switchEdition("bedrock")}
+              disabled={isBusy}
+            >
+              統合版
+            </button>
+            <button
+              className={edition === "java" ? "active" : ""}
+              type="button"
+              aria-pressed={edition === "java"}
+              onClick={() => switchEdition("java")}
+              disabled={isBusy || !!configError}
+              title={configError || undefined}
+            >
+              Java版
+            </button>
+          </div>
           <span className="hearts" aria-hidden="true">
             <IconHeart size={20} />
             <IconHeart size={20} />
             <IconHeart size={20} />
           </span>
-          <button className="btn" type="button" onClick={resetAll}>
+          <button className="btn" type="button" onClick={() => resetWorkspace(edition)}>
             リセット
           </button>
         </div>
       </section>
 
+      {configError && <div className="warning-box config-warning">Java版設定エラー: {configError}</div>}
       <Stepper step={step} />
 
       <section className="focus-layout">
@@ -184,10 +259,10 @@ export default function Home() {
           {!hasStarted && (
             <div className="chat-hero">
               <p className="kicker">START HERE</p>
-              <h2>どんなアドオンを作りたいですか？</h2>
+              <h2>{edition === "java" ? "Java版で何を作りたいですか？" : "どんなアドオンを作りたいですか？"}</h2>
               <p>まずは一文で。足りない情報はAIが順番に聞きます。</p>
               <div className="starter-grid" aria-label="作成例">
-                {starterPrompts.map((prompt) => (
+                {starterPrompts[edition].map((prompt) => (
                   <button
                     className="btn starter-button"
                     type="button"
@@ -240,7 +315,7 @@ export default function Home() {
               <div className="ready-actions">
                 <button className="btn pri" type="button" onClick={buildPack} disabled={isBuilding}>
                   <IconPlayerPlay size={18} aria-hidden="true" />
-                  {isBuilding ? "生成中..." : ".mcpack を生成"}
+                  {isBuilding ? "生成中..." : buildLabel}
                 </button>
                 <button className="btn" type="button" onClick={() => inputRef.current?.focus()}>
                   内容を直す
@@ -255,7 +330,11 @@ export default function Home() {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="例: 鉄インゴットと棒で、雷を出せる槍を作りたい（Enterで送信 / Shift+Enterで改行）"
+              placeholder={
+                edition === "java"
+                  ? "例: 60秒ごとに『休憩しよう』と表示したい（Enterで送信 / Shift+Enterで改行）"
+                  : "例: 鉄インゴットと棒で、雷を出せる槍を作りたい（Enterで送信 / Shift+Enterで改行）"
+              }
               rows={3}
             />
             <button className="btn pri" type="submit" disabled={isChatting || !input.trim()}>
@@ -268,8 +347,8 @@ export default function Home() {
           <p className="kicker">BLUEPRINT / 設計図</p>
           <h2>{spec.title || "まだ作成内容は未確定です"}</h2>
 
-          {rows.map((row) => (
-            <div className={`bp-row ${row.status}`} key={row.label}>
+          {rows.map((row, index) => (
+            <div className={`bp-row ${row.status}`} key={`${row.label}-${index}`}>
               <span className="bl">{row.label}</span>
               <span className="bv">{row.value}</span>
               {row.status === "done" && <IconCheck className="bs ok" size={18} aria-hidden="true" />}
@@ -284,7 +363,9 @@ export default function Home() {
 
           {canBuild && (
             <div className="output-box">
-              <label htmlFor="outputDir">出力先フォルダ</label>
+              <label htmlFor="outputDir">
+                出力先フォルダ{edition === "java" ? "（Java版 専用）" : ""}
+              </label>
               <input id="outputDir" value={outputDir} onChange={(event) => setOutputDir(event.target.value)} />
               <div className="output-actions">
                 <button className="btn" type="button" onClick={selectOutputDir} disabled={isSelectingOutput}>
@@ -296,7 +377,7 @@ export default function Home() {
               </div>
               <button className="btn pri wide" type="button" onClick={buildPack} disabled={isBuilding}>
                 <IconPlayerPlay size={18} aria-hidden="true" />
-                {isBuilding ? "生成中..." : ".mcpack を生成"}
+                {isBuilding ? "生成中..." : buildLabel}
               </button>
             </div>
           )}
@@ -304,13 +385,13 @@ export default function Home() {
           {buildResult && (
             <div className="result-box">
               <h3>生成完了</h3>
-              <p>{buildResult.mcpackPath}</p>
+              <p>{buildResult.packPath}</p>
               <ul>
                 {buildResult.files.map((file) => (
                   <li key={file}>{file}</li>
                 ))}
               </ul>
-              <button className="btn" type="button" onClick={resetAll}>
+              <button className="btn" type="button" onClick={() => resetWorkspace(edition)}>
                 <IconRefresh size={18} aria-hidden="true" />
                 続けて作る
               </button>
@@ -320,6 +401,16 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+function getBuildLabel(spec: AddonSpec): string {
+  if (spec.edition === "bedrock") return ".mcpack を生成";
+  return spec.kind === "resourcepack" ? "リソースパック(.zip) を生成" : "データパック(.zip) を生成";
+}
+
+function getPackName(spec: AddonSpec): string {
+  if (spec.edition === "bedrock") return ".mcpack";
+  return spec.kind === "resourcepack" ? "リソースパック(.zip)" : "データパック(.zip)";
 }
 
 function Stepper({ step }: { step: { kind: StepStatus; detail: StepStatus; build: StepStatus } }) {

@@ -126,6 +126,33 @@ p {
   gap: 16px;
 }
 
+.edition-switch {
+  display: inline-flex;
+  border: 3px solid var(--panel-edge);
+  background: #6f6f6f;
+  box-shadow: inset 3px 3px 0 #505050;
+}
+
+.edition-switch button {
+  font-family: inherit;
+  font-size: 14px;
+  color: #2f2f2f;
+  background: var(--btn);
+  border: 0;
+  border-right: 2px solid var(--panel-edge);
+  padding: 8px 12px;
+}
+
+.edition-switch button:last-child {
+  border-right: 0;
+}
+
+.edition-switch button.active {
+  color: #ffffff;
+  background: var(--accent);
+  box-shadow: inset 3px 3px 0 var(--accent-light), inset -3px -3px 0 var(--accent-dark);
+}
+
 .hearts {
   display: flex;
   gap: 3px;
@@ -465,6 +492,10 @@ input:focus {
   border: 3px solid var(--warn-line);
 }
 
+.config-warning {
+  margin: 0 0 12px;
+}
+
 .warning-box p {
   margin: 0 0 6px;
 }
@@ -512,6 +543,17 @@ input:focus {
   }
 
   .stepper {
+    gap: 8px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .topbar-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px;
   }
 

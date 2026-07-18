@@ -8,6 +8,8 @@ export function kindLabel(kind: AddonKind): string {
       return "アイテム";
     case "script":
       return "スクリプト";
+    case "resourcepack":
+      return "リソースパック";
   }
 }
 
@@ -25,7 +27,7 @@ export function stepState(input: { hasStarted: boolean; canBuild: boolean; built
 export type RowStatus = "done" | "current" | "pending" | "info";
 export type BlueprintRow = { label: string; value: string; status: RowStatus };
 
-export function blueprintRows(spec: AddonSpec): BlueprintRow[] {
+export function blueprintRows(spec: AddonSpec, javaTargetVersion = ""): BlueprintRow[] {
   const checks = specChecks(spec);
 
   let currentAssigned = false;
@@ -47,11 +49,29 @@ export function blueprintRows(spec: AddonSpec): BlueprintRow[] {
     status: statusByKey.get(c.key) ?? "pending"
   });
 
-  const rows = checks.map(toRow);
+  const rows: BlueprintRow[] = [
+    {
+      label: "エディション",
+      value:
+        spec.edition === "java"
+          ? `Java版${javaTargetVersion ? `（${javaTargetVersion}）` : ""}`
+          : "統合版",
+      status: "info"
+    }
+  ];
+  if (spec.edition === "java") {
+    rows.push({
+      label: "パック種別",
+      value: spec.kind === "resourcepack" ? "リソースパック" : "データパック",
+      status: "info"
+    });
+  }
+  rows.push(...checks.map(toRow));
 
   const insertInfoAfter = (afterKey: string, row: BlueprintRow) => {
     const index = checks.findIndex((c) => c.key === afterKey);
-    if (index >= 0) rows.splice(index + 1, 0, row);
+    const infoOffset = rows.length - checks.length;
+    if (index >= 0) rows.splice(infoOffset + index + 1, 0, row);
     else rows.push(row);
   };
 
