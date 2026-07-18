@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>モック: Addon Chat Builder Java版対応（2026-07-18）</title>
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=DotGothic16&family=Press+Start+2P&display=swap");
+
+  :root {
+    color-scheme: light;
+    --bg: #8cb4ff;
+    --ink: #262626;
+    --muted: #5a5a5a;
+    --top: linear-gradient(#7cb441 0 54%, #5f8f31 54% 60%, #7a5a3a 60% 100%);
+    --top-edge: #3c5a1e;
+    --panel: #cfcfcf;
+    --panel-light: #ececec;
+    --panel-dark: #8f8f8f;
+    --panel-edge: #2c2c2c;
+    --btn: #bcbcbc;
+    --btn-light: #e4e4e4;
+    --btn-dark: #7d7d7d;
+    --accent: #5aa83f;
+    --accent-light: #7cc85f;
+    --accent-dark: #3a6f28;
+    --accent-edge: #244d16;
+    --bub-ai: #dadada;
+    --bub-user: #b9d2ff;
+    --input-bg: #f4f4f4;
+    --chip-ink: #2f6b1c;
+    --cur-bg: #fff5cf;
+    --cur-ink: #7a5a10;
+    --done-bg: #cfe3c2;
+    --done-ink: #2f6b1c;
+    --heart: #e0524d;
+    --note: #d2691e;
+    --press: "Press Start 2P", "DotGothic16", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "DotGothic16", "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  }
+  h1, h2, h3, p { margin-top: 0; }
+  button, input, textarea { font: inherit; cursor: pointer; }
+
+  .mock-banner {
+    background: #14251b;
+    color: #fff;
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+  .mock-banner strong { color: #9fd8b7; }
+
+  .app-shell { min-height: 100vh; padding: 18px; max-width: 1180px; margin: 0 auto; }
+  .card {
+    background: var(--panel);
+    border: 3px solid var(--panel-edge);
+    box-shadow: inset 4px 4px 0 var(--panel-light), inset -4px -4px 0 var(--panel-dark);
+    padding: 18px 20px;
+    position: relative;
+  }
+
+  /* Topbar */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--top);
+    border: 3px solid var(--panel-edge);
+    border-bottom: 5px solid var(--top-edge);
+    padding: 12px 20px;
+    margin-bottom: 12px;
+    position: relative;
+    flex-wrap: wrap; gap: 10px;
+  }
+  .eyebrow { font-family: var(--press); font-size: 11px; letter-spacing: 1px; color: #eaffd6; margin: 0; }
+  .topbar h1 { font-family: var(--press); font-size: 20px; color: #fff; text-shadow: 3px 3px 0 #2e4718; margin: 10px 0 0; }
+  .topbar-right { display: flex; align-items: center; gap: 14px; position: relative; flex-wrap: wrap; }
+  .hearts { color: var(--heart); font-size: 18px; letter-spacing: 2px; }
+
+  .btn {
+    font-size: 15px;
+    background: var(--btn);
+    color: var(--ink);
+    border: 3px solid var(--panel-edge);
+    box-shadow: inset 3px 3px 0 var(--btn-light), inset -3px -3px 0 var(--btn-dark);
+    padding: 9px 15px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn.pri {
+    background: var(--accent); color: #fff; border-color: var(--accent-edge);
+    box-shadow: inset 3px 3px 0 var(--accent-light), inset -3px -3px 0 var(--accent-dark);
+  }
+  .btn.wide { width: 100%; }
+
+  /* ▼ 新設: エディション切替 */
+  .edition-switch { display: inline-flex; }
+  .edition-switch button {
+    font-family: inherit; font-size: 14px;
+    background: var(--btn); color: var(--ink);
+    border: 3px solid var(--panel-edge);
+    box-shadow: inset 3px 3px 0 var(--btn-light), inset -3px -3px 0 var(--btn-dark);
+    padding: 8px 14px;
+  }
+  .edition-switch button + button { border-left-width: 0; }
+  .edition-switch button.active {
+    background: var(--accent); color: #fff; border-color: var(--accent-edge);
+    box-shadow: inset 3px 3px 0 var(--accent-light), inset -3px -3px 0 var(--accent-dark);
+  }
+
+  /* Stepper */
+  .stepper { display: flex; gap: 12px; margin-bottom: 12px; }
+  .step {
+    flex: 1; display: flex; align-items: center; gap: 10px;
+    background: #9a9a9a; color: var(--ink);
+    border: 3px solid var(--panel-edge);
+    box-shadow: inset 3px 3px 0 #6f6f6f, inset -3px -3px 0 #c4c4c4;
+    padding: 11px 14px;
+  }
+  .step .sn { font-family: var(--press); font-size: 11px; }
+  .step .sl { font-size: 16px; }
+  .step .si { margin-left: auto; font-size: 14px; }
+  .step.done { background: var(--done-bg); color: var(--done-ink); }
+  .step.current { background: var(--cur-bg); color: var(--cur-ink); outline: 4px solid #fff; outline-offset: -2px; }
+
+  /* Layout */
+  .focus-layout { display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px; align-items: start; }
+  .kicker { font-family: var(--press); font-size: 10px; letter-spacing: 1px; color: var(--chip-ink); margin: 0 0 8px; }
+
+  .message-list { display: flex; flex-direction: column; gap: 10px; padding: 2px; margin-bottom: 12px; }
+  .message { border: 3px solid var(--panel-edge); padding: 10px 13px; max-width: 88%; }
+  .message span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .message p { margin: 0; line-height: 1.6; white-space: pre-wrap; }
+  .message.user { align-self: flex-end; background: var(--bub-user); }
+  .message.assistant { align-self: flex-start; background: var(--bub-ai); }
+
+  .ready-cta { margin: 12px 0 4px; padding: 12px 14px; background: var(--cur-bg); border: 3px solid var(--accent-edge); position: relative; }
+  .ready-cta p { margin: 0 0 10px; color: var(--cur-ink); }
+  .ready-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+  .chat-form { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 10px; margin-top: 12px; }
+  textarea, input {
+    width: 100%;
+    border: 3px solid var(--panel-edge);
+    box-shadow: inset 3px 3px 0 var(--panel-dark);
+    background: var(--input-bg); color: var(--ink);
+    padding: 11px; outline: none;
+  }
+  textarea { min-height: 70px; resize: vertical; }
+
+  /* Blueprint */
+  .blueprint h2 { font-size: 19px; margin: 0 0 10px; }
+  .bp-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 2px solid var(--panel-dark); font-size: 15px; position: relative; }
+  .bp-row .bl { color: var(--muted); width: 96px; flex: none; }
+  .bp-row .bv { flex: 1; overflow-wrap: anywhere; }
+  .bp-row .bs { flex: none; }
+  .bp-row .bs.ok { color: var(--accent-dark); }
+  .bp-row.info { opacity: 0.85; }
+  .bp-note { display: flex; align-items: center; gap: 8px; margin: 12px 0; color: var(--chip-ink); font-size: 15px; }
+
+  .output-box { display: grid; gap: 10px; margin-top: 12px; padding: 14px; background: #f8faf8; border: 3px solid var(--panel-edge); position: relative; }
+  .output-box label { color: var(--muted); font-size: 13px; }
+  .output-actions { display: flex; gap: 10px; }
+  .result-box { margin-top: 12px; padding: 14px; background: #f8faf8; border: 3px solid var(--panel-edge); }
+  .result-box h3 { font-size: 15px; margin: 0 0 8px; }
+  .result-box p { overflow-wrap: anywhere; margin: 0 0 8px; }
+  .result-box ul { margin: 0; padding-left: 20px; }
+
+  /* 注記（モック専用） */
+  .callout {
+    position: absolute;
+    background: var(--note); color: #fff;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+    font-family: Arial, sans-serif;
+    box-shadow: 0 1px 4px rgba(0,0,0,.4);
+    z-index: 5;
+  }
+  .notes, .variant {
+    background: #fff;
+    border: 3px dashed var(--note);
+    margin: 14px 0 0;
+    padding: 16px 18px;
+  }
+  .notes h2, .variant h2 { color: var(--note); font-size: 16px; }
+  .notes ol { margin: 0; padding-left: 22px; }
+  .notes li { line-height: 1.9; }
+  .num {
+    background: var(--note); color: #fff; border-radius: 999px;
+    display: inline-flex; width: 20px; height: 20px;
+    align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; margin-right: 6px;
+    font-family: Arial, sans-serif;
+  }
+  .variant-row { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .variant .cell { background: #f4f4f4; border: 2px solid var(--panel-dark); padding: 12px; }
+  .variant .cell p { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  .starter-strip { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0,1fr)); margin-top: 8px; }
+  .starter-strip .btn { text-align: left; font-size: 14px; min-height: 52px; justify-content: flex-start; }
+
+  @media (max-width: 900px) {
+    .focus-layout, .variant-row, .starter-strip { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="mock-banner">
+  画面イメージモック（実装前）｜対象: <strong>addon-chat-builder-desktop / apps/web v0.2.0 Java版対応</strong>｜
+  設計書: 機能設計書_Java版対応_2026-07-18.md ｜橙色の丸数字が今回の変更点（既存の草原テーマUIは維持）
+</div>
+
+<main class="app-shell">
+
+  <!-- トップバー -->
+  <section class="topbar">
+    <div>
+      <p class="eyebrow">MINECRAFT JAVA EDITION</p>
+      <h1>ADDON CHAT BUILDER</h1>
+    </div>
+    <div class="topbar-right">
+      <span class="callout" style="top:-16px; left:-18px;">1</span>
+      <div class="edition-switch">
+        <button type="button">統合版</button>
+        <button type="button" class="active">Java版</button>
+      </div>
+      <span class="hearts">&#9829;&#9829;&#9829;</span>
+      <button class="btn" type="button">リセット</button>
+    </div>
+  </section>
+
+  <!-- ステッパー（現行のまま） -->
+  <div class="stepper">
+    <div class="step done"><span class="sn">01</span><span class="sl">種類</span><span class="si">&#10003;</span></div>
+    <div class="step done"><span class="sn">02</span><span class="sl">詳細</span><span class="si">&#10003;</span></div>
+    <div class="step current"><span class="sn">03</span><span class="sl">生成</span><span class="si">&#9998;</span></div>
+  </div>
+
+  <section class="focus-layout">
+
+    <!-- チャットカード -->
+    <div class="card">
+      <div class="message-list">
+        <div class="message assistant">
+          <span>AI</span>
+          <p>作りたいデータパックまたはリソースパックを1文で教えてください。まだ曖昧でも大丈夫です。</p>
+        </div>
+        <div class="message user">
+          <span>ユーザー</span>
+          <p>ダイヤ8個と棒でエメラルドの剣を作れるレシピを追加したい</p>
+        </div>
+        <div class="message assistant">
+          <span>AI</span>
+          <p>Java版のデータパック（作業台レシピ）として整理しました。設計図がそろったので、いつでも生成できます。</p>
+        </div>
+      </div>
+
+      <div class="ready-cta">
+        <span class="callout" style="top:-14px; right:-10px;">5</span>
+        <p>準備OK！ この内容で作れます。</p>
+        <div class="ready-actions">
+          <button class="btn pri" type="button">&#9654; データパック(.zip) を生成</button>
+          <button class="btn" type="button">内容を直す</button>
+        </div>
+      </div>
+
+      <form class="chat-form" onsubmit="return false;">
+        <textarea placeholder="例: 鉄ブロックとダイヤで強い剣のレシピを作りたい（Enterで送信 / Shift+Enterで改行）"></textarea>
+        <button class="btn pri" type="submit">送信</button>
+      </form>
+    </div>
+
+    <!-- 設計図パネル -->
+    <section class="card blueprint">
+      <p class="kicker">BLUEPRINT / 設計図</p>
+      <h2>エメラルドの剣レシピ</h2>
+
+      <div class="bp-row info">
+        <span class="callout" style="top:-4px; left:-16px;">3</span>
+        <span class="bl">エディション</span><span class="bv">Java版（1.21）</span>
+      </div>
+      <div class="bp-row info">
+        <span class="bl">パック種別</span><span class="bv">データパック</span>
+      </div>
+      <div class="bp-row"><span class="bl">種類</span><span class="bv">レシピ</span><span class="bs ok">&#10003;</span></div>
+      <div class="bp-row"><span class="bl">名前</span><span class="bv">エメラルドの剣レシピ</span><span class="bs ok">&#10003;</span></div>
+      <div class="bp-row"><span class="bl">説明</span><span class="bv">ダイヤ8個と棒でクラフト</span><span class="bs ok">&#10003;</span></div>
+      <div class="bp-row"><span class="bl">完成品</span><span class="bv">minecraft:emerald x 1</span><span class="bs ok">&#10003;</span></div>
+      <div class="bp-row"><span class="bl">形</span><span class="bv">DDD / DSD / DDD</span><span class="bs ok">&#10003;</span></div>
+      <div class="bp-row"><span class="bl">素材</span><span class="bv">2種</span><span class="bs ok">&#10003;</span></div>
+      <div class="bp-row"><span class="bl">namespace</span><span class="bv">my_addon</span><span class="bs ok">&#10003;</span></div>
+      <div class="bp-row"><span class="bl">出力名</span><span class="bv">emerald-sword</span><span class="bs ok">&#10003;</span></div>
+
+      <p class="bp-note">&#10003; 準備OK！</p>
+
+      <div class="output-box">
+        <span class="callout" style="top:-14px; right:-10px;">4</span>
+        <label for="outputDir">出力先フォルダ（Java版 専用）</label>
+        <input id="outputDir" value="D:\my-app2\Minecraft_Addon\javaパックファイル" readonly>
+        <div class="output-actions">
+          <button class="btn" type="button">フォルダを選択</button>
+          <button class="btn" type="button">既定に戻す</button>
+        </div>
+        <button class="btn pri wide" type="button">&#9654; データパック(.zip) を生成</button>
+      </div>
+
+      <div class="result-box">
+        <h3>生成完了</h3>
+        <p>D:\my-app2\Minecraft_Addon\javaパックファイル\emerald-sword-datapack.zip</p>
+        <ul>
+          <li>pack.mcmeta</li>
+          <li>data/my_addon/recipe/emerald_sword.json</li>
+          <li>README.txt</li>
+        </ul>
+        <button class="btn" type="button">&#8635; 続けて作る</button>
+      </div>
+    </section>
+  </section>
+
+  <!-- Java版の初期画面（スターター例） -->
+  <section class="variant">
+    <h2><span class="num">2</span>Java版の初期画面：スターター例の切替</h2>
+    <p style="color:var(--muted); margin-bottom:4px;">
+      「新しいアイテムを追加したい」はJava版では非表示（データパックでは実現不可のため）。代わりにリソースパック例を出す。
+    </p>
+    <div class="starter-strip">
+      <button class="btn" type="button">新しい武器レシピを作りたい</button>
+      <button class="btn" type="button">アイテムの表示名を変えたい（リソースパック）</button>
+      <button class="btn" type="button">一定間隔でチャットにメッセージを流したい</button>
+    </div>
+  </section>
+
+  <!-- 生成ボタンのバリエーション -->
+  <section class="variant">
+    <h2><span class="num">5</span>生成ボタンの表示バリエーション（kind × エディションで自動切替）</h2>
+    <div class="variant-row">
+      <div class="cell">
+        <p>統合版（現行のまま）</p>
+        <button class="btn pri wide" type="button">&#9654; .mcpack を生成</button>
+      </div>
+      <div class="cell">
+        <p>Java版 × レシピ / スクリプト → データパック</p>
+        <button class="btn pri wide" type="button">&#9654; データパック(.zip) を生成</button>
+      </div>
+      <div class="cell">
+        <p>Java版 × リソースパック（JSONのみ）</p>
+        <button class="btn pri wide" type="button">&#9654; リソースパック(.zip) を生成</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 注記 -->
+  <section class="notes">
+    <h2>変更点の説明（設計書 §4.6 対応）</h2>
+    <ol>
+      <li><span class="num">1</span><b>エディション切替</b>：トップバー右に「統合版 / Java版」のブロック調切替を新設。eyebrow 表示（MINECRAFT BEDROCK / MINECRAFT JAVA EDITION）も連動。切替時は会話と設計図をリセット（作成開始後は確認ダイアログあり）。</li>
+      <li><span class="num">2</span><b>スターター例の切替</b>：Java版はレシピ・表示名変更（リソースパック）・定期メッセージの3例に差し替え。</li>
+      <li><span class="num">3</span><b>設計図に情報行を追加</b>：先頭に「エディション」行、Java版時は「パック種別」行（種類から自動決定）を表示。既存の行進行・チェック表示はそのまま。</li>
+      <li><span class="num">4</span><b>Java専用出力先</b>：既定を <code>Minecraft_Addon\javaパックファイル</code>（新設）に切替。「既定に戻す」もエディション別の既定へ。</li>
+      <li><span class="num">5</span><b>生成ボタンの文言切替</b>：ready-cta と設計図下部の両方で「.mcpack を生成 / データパック(.zip) を生成 / リソースパック(.zip) を生成」を自動切替。生成完了メッセージ・ファイル一覧も同様。</li>
+    </ol>
+  </section>
+
+</main>
+</body>
+</html>
