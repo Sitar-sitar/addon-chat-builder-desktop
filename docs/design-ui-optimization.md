@@ -8,6 +8,8 @@
 - ステータス: 実装済み（ブランチ `codex-migrate-web-monorepo`・コード反映済み／WebView2実機の見た目確認済み 2026-06-17）
 - 関連: レビュー [レビュー_UIリデザイン設計_2026-06-17.md](レビュー_UIリデザイン設計_2026-06-17.md) を反映 / 後続前提 [design-consolidation.md](design-consolidation.md) / 索引 [設計書インデックス.md](設計書インデックス.md)
 
+> **一部 superseded（2026-07-18）**: 本書中の BuildResult / `/api/build` 応答（`mcpackPath`）に関する記述は、[機能設計書_Java版対応_2026-07-18.md](機能設計書_Java版対応_2026-07-18.md) §4.3 の `packPath` が正本となり supersede された。それ以外の節は引き続き有効。
+>
 > 本書は旧ドラフト「UI最適化6項目」を統合・置換（同一ファイル内で supersede）。レビュー(2026-06-17) の P1〜P3 を反映済み。
 > 実装メモ: フォントは実装時に DotGothic16 を `@import` 方式へ変更（§3.1）。`vitest` 10件／`tsc --noEmit`／`next build` グリーンを確認。`@tabler/icons-react` を依存追加。WebView2実機の見た目を 2026-06-17 に確認（テーマ・ステッパー・ライブ設計図・残数表示が設計どおり）。
 
