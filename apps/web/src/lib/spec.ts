@@ -1,4 +1,4 @@
-import type { JavaCapabilityId } from "./pattern-catalog";
+import { capabilitiesForSpec, type JavaCapabilityId } from "./pattern-catalog";
 import type { JavaVersionRule } from "./pack-rules";
 
 export type Edition = "bedrock" | "java";
@@ -250,48 +250,13 @@ function validateJava(
   rule: JavaVersionRule | undefined,
   errors: string[],
 ): void {
-  const required = javaCapabilitiesForValidation(spec);
-  for (const id of required)
+  for (const id of capabilitiesForSpec(spec))
     if (!capabilities.includes(id))
       errors.push(`現在のJava版では未対応の機能です: ${id}`);
   if (spec.kind === "recipe") validateJavaRecipe(spec.recipe, rule, errors);
   else if (spec.kind === "script") validateJavaScript(spec.javaScript, errors);
   else if (spec.kind === "loot") validateLoot(spec.loot, errors);
   else validateResourcepack(spec.resourcepack, errors);
-}
-
-function javaCapabilitiesForValidation(
-  spec: JavaAddonSpec,
-): JavaCapabilityId[] {
-  if (spec.kind === "recipe") {
-    const type = spec.recipe?.recipeType ?? "shaped";
-    return [
-      type === "shaped"
-        ? "recipe.shaped"
-        : type === "shapeless"
-          ? "recipe.shapeless"
-          : ["smelting", "blasting", "smoking", "campfire_cooking"].includes(
-                type,
-              )
-            ? "recipe.cooking"
-            : type === "stonecutting"
-              ? "recipe.stonecutting"
-              : "recipe.smithing",
-    ];
-  }
-  if (spec.kind === "script" && spec.javaScript)
-    return [
-      `script.trigger.${spec.javaScript.trigger}` as JavaCapabilityId,
-      ...spec.javaScript.actions.map(
-        (action) => `script.action.${action.type}` as JavaCapabilityId,
-      ),
-    ];
-  if (spec.kind === "loot") return ["loot.blockDrop"];
-  return [
-    spec.resourcepack?.pattern === "itemModelSwap"
-      ? "resourcepack.itemModelSwap"
-      : "resourcepack.lang",
-  ];
 }
 
 function validateJavaRecipe(
@@ -321,6 +286,10 @@ function validateJavaRecipe(
     );
     if ([...symbols].some((s) => !(s in r.key)))
       errors.push("Java版のレシピパターンで未定義の素材記号を使用しています。");
+    if (Object.keys(r.key).some((s) => !symbols.has(s)))
+      errors.push(
+        "Java版のレシピ素材に、パターンで使われていない記号があります。",
+      );
     if (
       Object.keys(r.key).length < 1 ||
       Object.keys(r.key).some((s) => s.length !== 1) ||

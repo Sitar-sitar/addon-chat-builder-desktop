@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   describePack,
   generateJavaFiles,
-  JAVA_GENERATOR_HANDLERS,
+  JAVA_GENERATOR_CAPABILITY_COVERAGE,
 } from "../../src/lib/java-generator";
 import { JAVA_CAPABILITIES } from "../../src/lib/pattern-catalog";
 import {
@@ -16,8 +16,8 @@ const parse = (files: ReturnType<typeof generateJavaFiles>, path: string) =>
   JSON.parse(files.find((f) => f.path === path)!.content);
 
 describe("java generator", () => {
-  it("has a generator entry for every catalog capability", () =>
-    expect(Object.keys(JAVA_GENERATOR_HANDLERS).sort()).toEqual(
+  it("has a coverage entry for every catalog capability id", () =>
+    expect(Object.keys(JAVA_GENERATOR_CAPABILITY_COVERAGE).sort()).toEqual(
       JAVA_CAPABILITIES.map((c) => c.id).sort(),
     ));
   it("keeps shaped recipe file stable and derives one description for mcmeta/readme", () => {
@@ -177,5 +177,49 @@ describe("java generator", () => {
         model: "minecraft:item/netherite_sword",
       },
     });
+  });
+  it("adds the namespace collision note only to script README files", () => {
+    const readmeOf = (files: ReturnType<typeof generateJavaFiles>) =>
+      files.find((f) => f.path === "README.txt")!.content;
+
+    expect(readmeOf(generateJavaFiles(javaScriptSpec(), "1.21.7"))).toContain(
+      "同じ namespace（test_pack）",
+    );
+    expect(readmeOf(generateJavaFiles(javaSpec(), "1.21.7"))).not.toContain(
+      "同じ namespace",
+    );
+    expect(
+      readmeOf(
+        generateJavaFiles(
+          javaSpec({
+            kind: "loot",
+            recipe: undefined,
+            loot: {
+              targetBlockId: "minecraft:stone",
+              dropItemId: "minecraft:gold_ingot",
+              dropCount: 1,
+            },
+          }),
+          "1.21.7",
+        ),
+      ),
+    ).not.toContain("同じ namespace");
+    expect(
+      readmeOf(
+        generateJavaFiles(
+          javaSpec({
+            kind: "resourcepack",
+            recipe: undefined,
+            resourcepack: {
+              pattern: "lang",
+              langEntries: [{ key: "item.minecraft.apple", value: "りんご" }],
+              targetItem: "",
+              sourceItem: "",
+            },
+          }),
+          "1.21.7",
+        ),
+      ),
+    ).not.toContain("同じ namespace");
   });
 });

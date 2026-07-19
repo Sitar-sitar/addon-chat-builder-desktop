@@ -4,7 +4,7 @@ import path from "node:path";
 import AdmZip from "adm-zip";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildPack } from "../../src/lib/addon-generator";
-import { javaScriptSpec, javaSpec } from "./java-fixtures";
+import { javaScriptSpec, javaSpec, shapedRecipe } from "./java-fixtures";
 
 const dirs: string[] = [];
 const original = process.env.JAVA_TARGET_VERSION;
@@ -49,6 +49,20 @@ describe("buildPack", () => {
     await expect(
       buildPack(javaSpec({ unsupportedRequests: ["未対応: 新モブ"] }), out),
     ).rejects.toThrow("未対応: 新モブ");
+    expect(await fs.readdir(out)).toEqual([]);
+  });
+  it("rejects shaped recipes with unused key symbols before writing output", async () => {
+    process.env.JAVA_TARGET_VERSION = "1.21.7";
+    const out = await output();
+    const spec = javaSpec({
+      recipe: {
+        ...shapedRecipe(),
+        key: { ...shapedRecipe().key, B: "minecraft:iron_ingot" },
+      },
+    });
+    await expect(buildPack(spec, out)).rejects.toThrow(
+      "パターンで使われていない記号",
+    );
     expect(await fs.readdir(out)).toEqual([]);
   });
   it("rejects unknown versions and invalid scripts", async () => {

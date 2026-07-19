@@ -535,6 +535,7 @@ async function fetchOpenAiResponse({
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(buildBody(model)),
+        signal: AbortSignal.timeout(120_000),
       });
       if (response.ok) return response;
       last = `${response.status} ${await response.text()}`;

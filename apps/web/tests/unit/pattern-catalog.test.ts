@@ -3,7 +3,7 @@ import {
   JAVA_CAPABILITIES,
   enabledJavaCapabilities,
 } from "../../src/lib/pattern-catalog";
-import { JAVA_GENERATOR_HANDLERS } from "../../src/lib/java-generator";
+import { JAVA_GENERATOR_CAPABILITY_COVERAGE } from "../../src/lib/java-generator";
 import { JAVA_CAPABILITY_VALIDATORS } from "../../src/lib/spec";
 import { JAVA_VERSIONS } from "../../src/lib/pack-rules";
 import { generateJavaFiles } from "../../src/lib/java-generator";
@@ -25,7 +25,9 @@ describe("pattern catalog", () => {
     const ids = JAVA_CAPABILITIES.map((c) => c.id).sort();
     expect(JAVA_CAPABILITIES.every((c) => c.promptLine.length > 0)).toBe(true);
     expect(Object.keys(JAVA_CAPABILITY_VALIDATORS).sort()).toEqual(ids);
-    expect(Object.keys(JAVA_GENERATOR_HANDLERS).sort()).toEqual(ids);
+    expect(Object.keys(JAVA_GENERATOR_CAPABILITY_COVERAGE).sort()).toEqual(
+      ids,
+    );
   });
   it("gates every version and release phase deterministically", () => {
     for (const rule of Object.values(JAVA_VERSIONS))

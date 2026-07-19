@@ -110,6 +110,20 @@ describe("spec validation", () => {
       ).join(),
     ).toContain("1固定");
   });
+  it("rejects shaped recipes whose key defines symbols unused in the pattern", () => {
+    const withUnusedSymbol = javaSpec({
+      recipe: {
+        ...shapedRecipe(),
+        key: { ...shapedRecipe().key, B: "minecraft:iron_ingot" },
+      },
+    });
+    expect(
+      validateSpec(withUnusedSymbol, caps(), JAVA_VERSIONS["1.21.7"]).join(),
+    ).toContain("パターンで使われていない記号");
+    expect(validateSpec(javaSpec(), caps(), JAVA_VERSIONS["1.21.7"])).toEqual(
+      [],
+    );
+  });
   it("rejects unavailable capabilities and keeps specChecks equivalent", () => {
     const spec = javaSpec({
       kind: "resourcepack",

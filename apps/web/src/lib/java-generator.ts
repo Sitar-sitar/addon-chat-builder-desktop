@@ -17,7 +17,10 @@ import {
   type JavaScriptSpec,
 } from "./spec";
 
-export const JAVA_GENERATOR_HANDLERS: Record<JavaCapabilityId, true> = {
+export const JAVA_GENERATOR_CAPABILITY_COVERAGE: Record<
+  JavaCapabilityId,
+  true
+> = {
   "recipe.shaped": true,
   "recipe.shapeless": true,
   "recipe.cooking": true,
@@ -47,11 +50,9 @@ export function generateJavaFiles(
 ): GeneratedPackFile[] {
   const { version, rule } = resolveJavaVersion(versionInput);
   const enabled = new Set(enabledJavaCapabilities(rule).map((c) => c.id));
-  for (const capability of capabilitiesForSpec(spec)) {
+  for (const capability of capabilitiesForSpec(spec))
     if (!enabled.has(capability))
       throw new Error(`現在のJava版では未対応の機能です: ${capability}`);
-    JAVA_GENERATOR_HANDLERS[capability];
-  }
   const description = describePack(spec, version);
   const packType = resolvePackType(spec);
   const format =
@@ -430,6 +431,10 @@ function buildReadme(
   if (spec.kind === "loot")
     notes.push(
       "注意: ブロックドロップを完全上書きするため、シルクタッチ・幸運の元挙動は失われます。",
+    );
+  if (spec.kind === "script")
+    notes.push(
+      `注意: 同じ namespace（${spec.namespace}）を使う別のスクリプト系データパックと同時に導入すると、機能が上書きされて正しく動かないことがあります。`,
     );
   if (
     spec.kind === "script" &&
