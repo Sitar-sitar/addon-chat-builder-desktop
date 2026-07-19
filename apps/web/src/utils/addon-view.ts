@@ -1,4 +1,6 @@
 import { AddonKind, AddonSpec, SpecCheck, specChecks } from "@/lib/spec";
+import type { JavaCapabilityId } from "@/lib/pattern-catalog";
+import type { JavaVersionRule } from "@/lib/pack-rules";
 
 export function kindLabel(kind: AddonKind): string {
   switch (kind) {
@@ -10,13 +12,23 @@ export function kindLabel(kind: AddonKind): string {
       return "スクリプト";
     case "resourcepack":
       return "リソースパック";
+    case "loot":
+      return "ドロップ差し替え";
   }
 }
 
 export type StepStatus = "done" | "current" | "todo";
-export type StepView = { kind: StepStatus; detail: StepStatus; build: StepStatus };
+export type StepView = {
+  kind: StepStatus;
+  detail: StepStatus;
+  build: StepStatus;
+};
 
-export function stepState(input: { hasStarted: boolean; canBuild: boolean; built: boolean }): StepView {
+export function stepState(input: {
+  hasStarted: boolean;
+  canBuild: boolean;
+  built: boolean;
+}): StepView {
   const { hasStarted, canBuild, built } = input;
   if (!hasStarted) return { kind: "current", detail: "todo", build: "todo" };
   if (!canBuild) return { kind: "done", detail: "current", build: "todo" };
@@ -27,8 +39,13 @@ export function stepState(input: { hasStarted: boolean; canBuild: boolean; built
 export type RowStatus = "done" | "current" | "pending" | "info";
 export type BlueprintRow = { label: string; value: string; status: RowStatus };
 
-export function blueprintRows(spec: AddonSpec, javaTargetVersion = ""): BlueprintRow[] {
-  const checks = specChecks(spec);
+export function blueprintRows(
+  spec: AddonSpec,
+  javaTargetVersion = "",
+  capabilities: readonly JavaCapabilityId[] = [],
+  rule?: JavaVersionRule,
+): BlueprintRow[] {
+  const checks = specChecks(spec, capabilities, rule);
 
   let currentAssigned = false;
   const statusByKey = new Map<string, RowStatus>();
@@ -46,7 +63,7 @@ export function blueprintRows(spec: AddonSpec, javaTargetVersion = ""): Blueprin
   const toRow = (c: SpecCheck): BlueprintRow => ({
     label: c.label,
     value: c.key === "kind" ? kindLabel(spec.kind) : c.value || "未定",
-    status: statusByKey.get(c.key) ?? "pending"
+    status: statusByKey.get(c.key) ?? "pending",
   });
 
   const rows: BlueprintRow[] = [
@@ -56,14 +73,14 @@ export function blueprintRows(spec: AddonSpec, javaTargetVersion = ""): Blueprin
         spec.edition === "java"
           ? `Java版${javaTargetVersion ? `（${javaTargetVersion}）` : ""}`
           : "統合版",
-      status: "info"
-    }
+      status: "info",
+    },
   ];
   if (spec.edition === "java") {
     rows.push({
       label: "パック種別",
       value: spec.kind === "resourcepack" ? "リソースパック" : "データパック",
-      status: "info"
+      status: "info",
     });
   }
   rows.push(...checks.map(toRow));
@@ -80,13 +97,28 @@ export function blueprintRows(spec: AddonSpec, javaTargetVersion = ""): Blueprin
     insertInfoAfter("identifier", {
       label: "表示名",
       value: spec.item?.displayName.trim() || "未設定",
-      status: "info"
+      status: "info",
     });
-  } else if (spec.kind === "script") {
+  } else if (spec.edition === "bedrock" && spec.kind === "script") {
     insertInfoAfter("event", {
       label: "概要",
       value: spec.script?.summary.trim() || "未設定",
-      status: "info"
+      status: "info",
+    });
+  }
+
+  if (spec.edition === "java" && spec.unsupportedRequests.length > 0) {
+    rows.push({
+      label: "未対応の要望",
+      value: spec.unsupportedRequests.join(" / "),
+      status: "current",
+    });
+  }
+  if (spec.unresolvedQuestions.length > 0) {
+    rows.push({
+      label: "未解決の質問",
+      value: spec.unresolvedQuestions.join(" / "),
+      status: "current",
     });
   }
 

@@ -1,35 +1,98 @@
 import { describe, expect, it } from "vitest";
-import { chatResponseSchema, normalizeRawSpec } from "@/lib/openai";
+import {
+  bedrockChatResponseSchema,
+  codexUserInputText,
+  javaChatResponseSchema,
+  normalizeRawSpec,
+  toLegacyBedrockCodexSpec,
+} from "../../src/lib/openai";
+import type { BedrockAddonSpec } from "../../src/lib/spec";
+import { emptyAction } from "./java-fixtures";
 
-const raw = {
-  edition: "bedrock" as const,
-  title: "名前変更",
-  description: "表示名変更",
-  kind: "resourcepack" as const,
-  namespace: "names",
-  outputName: "names",
-  recipe: { resultItem: "minecraft:stick", resultCount: 1, pattern: ["#"], ingredients: [{ symbol: "#", item: "minecraft:stone" }] },
-  item: { identifier: "test:item", displayName: "item", maxStackSize: 1 },
-  script: { event: "interval" as const, summary: "summary", message: "message", intervalSeconds: 60 },
-  resourcepack: { langEntries: [{ key: " item.minecraft.stick ", value: " 棒 " }] },
-  unresolvedQuestions: []
+const bedrock: BedrockAddonSpec = {
+  edition: "bedrock",
+  title: "B",
+  description: "D",
+  kind: "script",
+  namespace: "b",
+  outputName: "b",
+  script: { event: "itemUse", summary: "s", message: "m" },
+  unresolvedQuestions: [],
 };
 
-describe("normalizeRawSpec edition lock", () => {
-  it("構造化出力でJavaリソースパックを許可する", () => {
-    expect(chatResponseSchema.properties.spec.properties.kind.enum).toContain("resourcepack");
+describe("OpenAI schemas and normalization", () => {
+  it("keeps Bedrock projection keys and JSON order stable", () => {
+    expect(Object.keys(toLegacyBedrockCodexSpec(bedrock))).toEqual([
+      "edition",
+      "title",
+      "description",
+      "kind",
+      "namespace",
+      "outputName",
+      "recipe",
+      "item",
+      "script",
+      "unresolvedQuestions",
+    ]);
+    expect(codexUserInputText(bedrock)).toBe(
+      '{"spec":{"edition":"bedrock","title":"B","description":"D","kind":"script","namespace":"b","outputName":"b","script":{"event":"itemUse","summary":"s","message":"m"},"unresolvedQuestions":[]}}',
+    );
   });
-
-  it("モデルeditionをJavaへ上書きし非対象セクションを消す", () => {
-    const result = normalizeRawSpec(raw, "java");
-    expect(result.edition).toBe("java");
-    expect(result.item).toBeUndefined();
-    expect(result.recipe).toBeUndefined();
-    expect(result.script).toBeUndefined();
-    expect(result.resourcepack).toEqual({ langEntries: [{ key: "item.minecraft.stick", value: "棒" }] });
+  it("separates Bedrock and Java schemas", () => {
+    const bedrockSpec = (bedrockChatResponseSchema as any).properties.spec;
+    const javaSpec = (javaChatResponseSchema as any).properties.spec;
+    expect(bedrockSpec.required).not.toContain("unsupportedRequests");
+    expect(bedrockSpec.properties.kind.enum).toEqual([
+      "recipe",
+      "item",
+      "script",
+      "resourcepack",
+    ]);
+    expect(javaSpec.required).toContain("unsupportedRequests");
+    expect(javaSpec.properties.javaScript.properties.actions.maxItems).toBe(3);
   });
-
-  it("Bedrockではresourcepackを消す", () => {
-    expect(normalizeRawSpec(raw, "bedrock").resourcepack).toBeUndefined();
+  it("normalizes Bedrock without Java fields", () => {
+    const raw: any = {
+      ...bedrock,
+      recipe: { ingredients: [] },
+      item: {},
+      script: bedrock.script,
+      resourcepack: { langEntries: [] },
+    };
+    const spec = normalizeRawSpec(raw, "bedrock");
+    expect(spec.edition).toBe("bedrock");
+    expect("unsupportedRequests" in spec).toBe(false);
+  });
+  it("does not silently truncate Java actions", () => {
+    const actions = [
+      emptyAction(),
+      emptyAction(),
+      emptyAction(),
+      emptyAction(),
+    ];
+    const raw: any = {
+      title: "J",
+      description: "D",
+      kind: "script",
+      namespace: "j",
+      outputName: "j",
+      recipe: {},
+      javaScript: {
+        trigger: "interval",
+        intervalSeconds: 60,
+        condition: "always",
+        actions,
+        triggerItemId: "",
+        triggerEntityId: "",
+        triggerBlockId: "",
+        summary: "",
+      },
+      loot: {},
+      resourcepack: {},
+      unresolvedQuestions: [],
+      unsupportedRequests: [],
+    };
+    const spec = normalizeRawSpec(raw, "java");
+    expect(spec.edition === "java" && spec.javaScript?.actions).toHaveLength(4);
   });
 });

@@ -1,143 +1,136 @@
 import { describe, expect, it } from "vitest";
-import { AddonSpec, validateSpec } from "@/lib/spec";
+import { JAVA_VERSIONS } from "../../src/lib/pack-rules";
+import {
+  MC_ID,
+  MC_PATH_ID,
+  MC_SOUND_ID,
+  objectiveName,
+  specChecks,
+  validateSpec,
+  type BedrockAddonSpec,
+} from "../../src/lib/spec";
+import {
+  caps,
+  emptyAction,
+  javaScriptSpec,
+  javaSpec,
+  shapedRecipe,
+} from "./java-fixtures";
 
-function javaScript(intervalSeconds: number, event: "interval" | "itemUse" = "interval"): AddonSpec {
-  return {
-    edition: "java",
-    title: "通知",
-    description: "定期通知",
-    kind: "script",
-    namespace: "notify",
-    outputName: "notify",
-    script: { event, summary: "通知", message: "休憩", intervalSeconds },
-    unresolvedQuestions: []
-  };
-}
-
-function javaRecipe(pattern: string[], key: Record<string, string>): AddonSpec {
-  return {
-    edition: "java",
-    title: "レシピ",
-    description: "確認用レシピ",
-    kind: "recipe",
-    namespace: "recipes",
-    outputName: "recipe",
-    recipe: { resultItem: "minecraft:stick", resultCount: 1, pattern, key },
-    unresolvedQuestions: []
-  };
-}
-
-describe("validateSpec Java版", () => {
-  it.each([
-    [4, false],
-    [5, true],
-    [3600, true],
-    [3601, false]
-  ])("intervalSeconds=%s", (seconds, valid) => {
-    expect(validateSpec(javaScript(seconds)).length === 0).toBe(valid);
-  });
-
-  it("itemとitemUseを拒否する", () => {
-    const item: AddonSpec = {
-      edition: "java",
-      title: "杖",
-      description: "杖を追加",
-      kind: "item",
-      namespace: "wand",
-      outputName: "wand",
-      item: { identifier: "wand:item", displayName: "杖", maxStackSize: 1 },
-      unresolvedQuestions: []
-    };
-    expect(validateSpec(item)).toContain("Java版ではアイテム追加はデータパックで実現できません（Mod が必要です）。");
-    expect(validateSpec(javaScript(60, "itemUse"))).toContain("Java版の script は interval のみ対応です。");
-  });
-
-  it("Javaレシピはminecraft: IDだけを許可する", () => {
-    const spec: AddonSpec = {
-      edition: "java",
-      title: "レシピ",
-      description: "剣のレシピ",
-      kind: "recipe",
-      namespace: "recipes",
-      outputName: "sword",
-      recipe: { resultItem: "custom:sword", resultCount: 1, pattern: ["#"], key: { "#": "custom:gem" } },
-      unresolvedQuestions: []
-    };
-    expect(validateSpec(spec)).toEqual(expect.arrayContaining([
-      "Java版の完成アイテムは minecraft: のバニラIDにしてください。",
-      "Java版のレシピ素材は minecraft: のバニラIDにしてください。"
-    ]));
-  });
-
-  it.each([
-    {
-      name: "行幅不一致",
-      spec: javaRecipe(["#", "##"], { "#": "minecraft:diamond" }),
-      error: "Java版のレシピパターンは全行を同じ幅にしてください。"
-    },
-    {
-      name: "空行",
-      spec: javaRecipe([""], { "#": "minecraft:diamond" }),
-      error: "Java版のレシピパターンは各行1から3文字にしてください。"
-    },
-    {
-      name: "4文字行",
-      spec: javaRecipe(["####"], { "#": "minecraft:diamond" }),
-      error: "Java版のレシピパターンは各行1から3文字にしてください。"
-    },
-    {
-      name: "未定義記号",
-      spec: javaRecipe(["X"], { "#": "minecraft:diamond" }),
-      error: "Java版のレシピパターンで未定義の素材記号を使用しています。"
-    },
-    {
-      name: "複数文字key",
-      spec: javaRecipe(["#"], { "##": "minecraft:diamond" }),
-      error: "Java版のレシピ素材記号は1文字で指定してください。"
-    }
-  ])("Javaレシピのpattern/key整合を検証する: $name", ({ spec, error }) => {
-    expect(validateSpec(spec)).toContain(error);
-  });
-
-  it("pattern内の空白は素材記号として扱わない", () => {
-    expect(validateSpec(javaRecipe([" #", "# "], { "#": "minecraft:diamond" }))).toEqual([]);
-  });
-
-  it("langEntriesの不正key・空value・重複を拒否する", () => {
-    const spec: AddonSpec = {
-      edition: "java",
-      title: "名前変更",
-      description: "表示名を変更",
-      kind: "resourcepack",
-      namespace: "names",
-      outputName: "names",
-      resourcepack: {
-        langEntries: [
-          { key: "other.key", value: "" },
-          { key: "other.key", value: "名前" }
-        ]
-      },
-      unresolvedQuestions: []
-    };
-    const errors = validateSpec(spec);
-    expect(errors).toEqual(expect.arrayContaining([
-      "lang のキーは item.minecraft.* または block.minecraft.* の形にしてください。",
-      "lang の表示名は空にできません。",
-      "lang のキーが重複しています: other.key"
-    ]));
-  });
-
-  it("Bedrockのresourcepackを拒否する", () => {
-    const spec: AddonSpec = {
+describe("spec validation", () => {
+  it("keeps Bedrock validation independent from Java capabilities", () => {
+    const spec: BedrockAddonSpec = {
       edition: "bedrock",
-      title: "名前変更",
-      description: "表示名を変更",
-      kind: "resourcepack",
-      namespace: "names",
-      outputName: "names",
-      resourcepack: { langEntries: [{ key: "item.minecraft.stick", value: "棒" }] },
-      unresolvedQuestions: []
+      title: "B",
+      description: "D",
+      kind: "script",
+      namespace: "bedrock",
+      outputName: "bedrock",
+      script: { event: "itemUse", summary: "s", message: "m" },
+      unresolvedQuestions: [],
     };
-    expect(validateSpec(spec)).toContain("リソースパックは Java版のみ対応です。");
+    expect(validateSpec(spec)).toEqual([]);
+  });
+  it("validates namespace, ids and objective names", () => {
+    expect(MC_ID.test("minecraft:stone")).toBe(true);
+    expect(MC_ID.test("minecraft:a/b")).toBe(false);
+    expect(MC_SOUND_ID.test("minecraft:block.note.bell")).toBe(true);
+    expect(MC_PATH_ID.test("minecraft:../stone")).toBe(false);
+    expect(objectiveName("test_pack", "mineBlock", "minecraft:stone")).toMatch(
+      /^acb_[a-f0-9]{11}$/,
+    );
+    expect(
+      objectiveName("test_pack", "mineBlock", "minecraft:stone"),
+    ).toHaveLength(15);
+  });
+  it("enforces interval action and effect boundaries", () => {
+    expect(
+      validateSpec(
+        javaScriptSpec({
+          condition: "night",
+          actions: [{ ...emptyAction("effect"), effectSeconds: 75 }],
+        }),
+        caps(),
+        JAVA_VERSIONS["1.21.7"],
+      ),
+    ).toEqual([]);
+    expect(
+      validateSpec(
+        javaScriptSpec({
+          actions: [{ ...emptyAction("effect"), effectSeconds: 74 }],
+        }),
+        caps(),
+        JAVA_VERSIONS["1.21.7"],
+      ).join(),
+    ).toContain("+15秒");
+    expect(
+      validateSpec(
+        javaScriptSpec({ actions: [] }),
+        caps(),
+        JAVA_VERSIONS["1.21.7"],
+      ).join(),
+    ).toContain("1から3件");
+    expect(
+      validateSpec(
+        javaScriptSpec({
+          actions: [emptyAction(), emptyAction(), emptyAction(), emptyAction()],
+        }),
+        caps(),
+        JAVA_VERSIONS["1.21.7"],
+      ).join(),
+    ).toContain("1から3件");
+  });
+  it("validates recipe types and version dependent cooking count", () => {
+    const cooking = {
+      ...shapedRecipe(),
+      recipeType: "smelting" as const,
+      inputItem: "minecraft:raw_gold",
+      resultItem: "minecraft:gold_ingot",
+      resultCount: 2,
+    };
+    const spec = javaSpec({ recipe: cooking });
+    expect(
+      validateSpec(spec, caps("1.21.7"), JAVA_VERSIONS["1.21.7"]).join(),
+    ).toContain("完成数は1固定");
+    expect(validateSpec(spec, caps("26.2"), JAVA_VERSIONS["26.2"])).toEqual([]);
+    expect(
+      validateSpec(
+        javaSpec({
+          recipe: {
+            ...shapedRecipe(),
+            recipeType: "smithing_transform",
+            smithingTemplate: "minecraft:netherite_upgrade_smithing_template",
+            smithingBase: "minecraft:diamond_sword",
+            smithingAddition: "minecraft:netherite_ingot",
+            resultCount: 2,
+          },
+        }),
+        caps(),
+        JAVA_VERSIONS["1.21.7"],
+      ).join(),
+    ).toContain("1固定");
+  });
+  it("rejects unavailable capabilities and keeps specChecks equivalent", () => {
+    const spec = javaSpec({
+      kind: "resourcepack",
+      recipe: undefined,
+      resourcepack: {
+        pattern: "itemModelSwap",
+        langEntries: [],
+        targetItem: "minecraft:diamond_sword",
+        sourceItem: "minecraft:netherite_sword",
+      },
+    });
+    expect(
+      validateSpec(spec, caps("1.21"), JAVA_VERSIONS["1.21"]).join(),
+    ).toContain("未対応の機能");
+    for (const candidate of [javaSpec(), javaScriptSpec(), spec]) {
+      const errors = validateSpec(candidate, caps(), JAVA_VERSIONS["1.21.7"]);
+      expect(
+        specChecks(candidate, caps(), JAVA_VERSIONS["1.21.7"]).every(
+          (c) => c.ok,
+        ),
+      ).toBe(errors.length === 0);
+    }
   });
 });

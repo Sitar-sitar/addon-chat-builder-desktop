@@ -1,177 +1,359 @@
-import { AddonSpec, createEmptySpec, type Edition } from "./spec";
+import {
+  createEmptySpec,
+  type AddonSpec,
+  type BedrockAddonSpec,
+  type Edition,
+  type JavaAddonSpec,
+  type JavaRecipeSpec,
+  type JavaScriptAction,
+} from "./spec";
 import { getEnvValue } from "./env";
-import type { GeneratedPackFile } from "./pack-rules";
+import { enabledJavaCapabilities } from "./pattern-catalog";
+import { resolveJavaVersion, type GeneratedPackFile } from "./pack-rules";
 
 type ChatInput = {
   messages: { role: "user" | "assistant"; content: string }[];
   edition: Edition;
   currentSpec?: AddonSpec;
 };
-
 type ChatResult = {
   assistantMessage: string;
   spec: AddonSpec;
   suggestedReplies: string[];
   recommendedReply: string;
 };
-
-type RawChatResult = {
+type RawEnvelope = {
   assistantMessage: string;
-  spec: {
-    edition: Edition;
-    title: string;
-    description: string;
-    kind: "recipe" | "item" | "script" | "resourcepack";
-    namespace: string;
-    outputName: string;
-    recipe: {
-      resultItem: string;
-      resultCount: number;
-      pattern: string[];
-      ingredients: { symbol: string; item: string }[];
-    };
-    item: {
-      identifier: string;
-      displayName: string;
-      maxStackSize: number;
-    };
-    script: {
-      event: "itemUse" | "blockBreak" | "interval";
-      summary: string;
-      message: string;
-      intervalSeconds: number;
-    };
-    resourcepack: {
-      langEntries: { key: string; value: string }[];
-    };
-    unresolvedQuestions: string[];
-  };
+  spec: Record<string, any>;
   suggestedReplies: string[];
   recommendedReply: string;
 };
 
-export const chatResponseSchema = {
+const string = { type: "string" };
+const number = { type: "number" };
+const langEntries = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    required: ["key", "value"],
+    properties: { key: string, value: string },
+  },
+};
+const commonProperties = {
+  edition: { type: "string", enum: ["bedrock", "java"] },
+  title: string,
+  description: string,
+  kind: { type: "string" },
+  namespace: string,
+  outputName: string,
+  unresolvedQuestions: { type: "array", items: string },
+};
+
+export const bedrockChatResponseSchema = envelopeSchema(
+  {
+    ...commonProperties,
+    kind: {
+      type: "string",
+      enum: ["recipe", "item", "script", "resourcepack"],
+    },
+    recipe: {
+      type: "object",
+      additionalProperties: false,
+      required: ["resultItem", "resultCount", "pattern", "ingredients"],
+      properties: {
+        resultItem: string,
+        resultCount: number,
+        pattern: { type: "array", items: string },
+        ingredients: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["symbol", "item"],
+            properties: { symbol: string, item: string },
+          },
+        },
+      },
+    },
+    item: {
+      type: "object",
+      additionalProperties: false,
+      required: ["identifier", "displayName", "maxStackSize"],
+      properties: {
+        identifier: string,
+        displayName: string,
+        maxStackSize: number,
+      },
+    },
+    script: {
+      type: "object",
+      additionalProperties: false,
+      required: ["event", "summary", "message", "intervalSeconds"],
+      properties: {
+        event: { type: "string", enum: ["itemUse", "blockBreak", "interval"] },
+        summary: string,
+        message: string,
+        intervalSeconds: number,
+      },
+    },
+    resourcepack: {
+      type: "object",
+      additionalProperties: false,
+      required: ["langEntries"],
+      properties: { langEntries },
+    },
+  },
+  [
+    "edition",
+    "title",
+    "description",
+    "kind",
+    "namespace",
+    "outputName",
+    "recipe",
+    "item",
+    "script",
+    "resourcepack",
+    "unresolvedQuestions",
+  ],
+);
+export const chatResponseSchema = bedrockChatResponseSchema;
+
+const actionSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["assistantMessage", "spec", "suggestedReplies", "recommendedReply"],
+  required: [
+    "type",
+    "text",
+    "effectId",
+    "effectSeconds",
+    "effectAmplifier",
+    "soundId",
+    "timeValue",
+    "weatherValue",
+  ],
   properties: {
-    assistantMessage: { type: "string" },
-    spec: {
+    type: {
+      type: "string",
+      enum: [
+        "message",
+        "effect",
+        "title",
+        "actionbar",
+        "playsound",
+        "setTime",
+        "setWeather",
+      ],
+    },
+    text: string,
+    effectId: string,
+    effectSeconds: number,
+    effectAmplifier: number,
+    soundId: string,
+    timeValue: {
+      type: "string",
+      enum: ["day", "night", "noon", "midnight", ""],
+    },
+    weatherValue: { type: "string", enum: ["clear", "rain", "thunder", ""] },
+  },
+};
+export const javaChatResponseSchema = envelopeSchema(
+  {
+    ...commonProperties,
+    kind: {
+      type: "string",
+      enum: ["recipe", "script", "resourcepack", "loot"],
+    },
+    unsupportedRequests: { type: "array", items: string },
+    recipe: {
       type: "object",
       additionalProperties: false,
       required: [
-        "edition",
-        "title",
-        "description",
-        "kind",
-        "namespace",
-        "outputName",
-        "recipe",
-        "item",
-        "script",
-        "resourcepack",
-        "unresolvedQuestions"
+        "recipeType",
+        "resultItem",
+        "resultCount",
+        "pattern",
+        "ingredients",
+        "inputItem",
+        "cookingXp",
+        "cookingSeconds",
+        "smithingTemplate",
+        "smithingBase",
+        "smithingAddition",
+        "keyEntries",
       ],
       properties: {
-        edition: { type: "string", enum: ["bedrock", "java"] },
-        title: { type: "string" },
-        description: { type: "string" },
-        kind: { type: "string", enum: ["recipe", "item", "script", "resourcepack"] },
-        namespace: { type: "string" },
-        outputName: { type: "string" },
-        recipe: {
-          type: "object",
-          additionalProperties: false,
-          required: ["resultItem", "resultCount", "pattern", "ingredients"],
-          properties: {
-            resultItem: { type: "string" },
-            resultCount: { type: "number" },
-            pattern: { type: "array", items: { type: "string" } },
-            ingredients: {
-              type: "array",
-              items: {
-                type: "object",
-                additionalProperties: false,
-                required: ["symbol", "item"],
-                properties: {
-                  symbol: { type: "string" },
-                  item: { type: "string" }
-                }
-              }
-            }
-          }
+        recipeType: {
+          type: "string",
+          enum: [
+            "shaped",
+            "shapeless",
+            "smelting",
+            "blasting",
+            "smoking",
+            "campfire_cooking",
+            "stonecutting",
+            "smithing_transform",
+          ],
         },
-        item: {
-          type: "object",
-          additionalProperties: false,
-          required: ["identifier", "displayName", "maxStackSize"],
-          properties: {
-            identifier: { type: "string" },
-            displayName: { type: "string" },
-            maxStackSize: { type: "number" }
-          }
+        resultItem: string,
+        resultCount: number,
+        pattern: { type: "array", items: string },
+        ingredients: { type: "array", items: string },
+        inputItem: string,
+        cookingXp: number,
+        cookingSeconds: number,
+        smithingTemplate: string,
+        smithingBase: string,
+        smithingAddition: string,
+        keyEntries: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["symbol", "item"],
+            properties: { symbol: string, item: string },
+          },
         },
-        script: {
-          type: "object",
-          additionalProperties: false,
-          required: ["event", "summary", "message", "intervalSeconds"],
-          properties: {
-            event: { type: "string", enum: ["itemUse", "blockBreak", "interval"] },
-            summary: { type: "string" },
-            message: { type: "string" },
-            intervalSeconds: { type: "number" }
-          }
-        },
-        resourcepack: {
-          type: "object",
-          additionalProperties: false,
-          required: ["langEntries"],
-          properties: {
-            langEntries: {
-              type: "array",
-              items: {
-                type: "object",
-                additionalProperties: false,
-                required: ["key", "value"],
-                properties: {
-                  key: { type: "string" },
-                  value: { type: "string" }
-                }
-              }
-            }
-          }
-        },
-        unresolvedQuestions: { type: "array", items: { type: "string" } }
-      }
+      },
     },
-    suggestedReplies: { type: "array", maxItems: 4, items: { type: "string" } },
-    recommendedReply: { type: "string" }
-  }
-};
+    javaScript: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "trigger",
+        "intervalSeconds",
+        "condition",
+        "actions",
+        "triggerItemId",
+        "triggerEntityId",
+        "triggerBlockId",
+        "summary",
+      ],
+      properties: {
+        trigger: {
+          type: "string",
+          enum: [
+            "interval",
+            "consumeItem",
+            "placedBlock",
+            "killEntity",
+            "mineBlock",
+            "death",
+          ],
+        },
+        intervalSeconds: number,
+        condition: {
+          type: "string",
+          enum: ["always", "day", "night", "rain", "thunder"],
+        },
+        actions: {
+          type: "array",
+          minItems: 1,
+          maxItems: 3,
+          items: actionSchema,
+        },
+        triggerItemId: string,
+        triggerEntityId: string,
+        triggerBlockId: string,
+        summary: string,
+      },
+    },
+    loot: {
+      type: "object",
+      additionalProperties: false,
+      required: ["targetBlockId", "dropItemId", "dropCount"],
+      properties: {
+        targetBlockId: string,
+        dropItemId: string,
+        dropCount: number,
+      },
+    },
+    resourcepack: {
+      type: "object",
+      additionalProperties: false,
+      required: ["pattern", "langEntries", "targetItem", "sourceItem"],
+      properties: {
+        pattern: { type: "string", enum: ["lang", "itemModelSwap"] },
+        langEntries,
+        targetItem: string,
+        sourceItem: string,
+      },
+    },
+  },
+  [
+    "edition",
+    "title",
+    "description",
+    "kind",
+    "namespace",
+    "outputName",
+    "recipe",
+    "javaScript",
+    "loot",
+    "resourcepack",
+    "unresolvedQuestions",
+    "unsupportedRequests",
+  ],
+);
+
+function envelopeSchema(
+  specProperties: Record<string, unknown>,
+  required: string[],
+) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "assistantMessage",
+      "spec",
+      "suggestedReplies",
+      "recommendedReply",
+    ],
+    properties: {
+      assistantMessage: string,
+      spec: {
+        type: "object",
+        additionalProperties: false,
+        required,
+        properties: specProperties,
+      },
+      suggestedReplies: { type: "array", maxItems: 4, items: string },
+      recommendedReply: string,
+    },
+  };
+}
 
 export async function refineAddonSpec(input: ChatInput): Promise<ChatResult> {
   const apiKey = getEnvValue("OPENAI_API_KEY");
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY が未設定です。.env または API.env を確認してください。");
-  }
-
-  const model = getEnvValue("OPENAI_CHAT_MODEL") || getEnvValue("OPENAI_MODEL") || "gpt-5.4-mini";
+  if (!apiKey)
+    throw new Error(
+      "OPENAI_API_KEY が未設定です。.env または API.env を確認してください。",
+    );
+  const model =
+    getEnvValue("OPENAI_CHAT_MODEL") ||
+    getEnvValue("OPENAI_MODEL") ||
+    "gpt-5.4-mini";
   const currentSpec = input.currentSpec
     ? { ...input.currentSpec, edition: input.edition }
     : createEmptySpec(input.edition);
-  const editionPrompt = input.edition === "java"
+  const java = input.edition === "java";
+  const enabled = java
+    ? enabledJavaCapabilities(resolveJavaVersion().rule)
+    : [];
+  const editionPrompt = java
     ? [
         "あなたはMinecraft Java Editionの小規模パック作成を支援する設計担当です。",
-        "対応範囲は recipe、script(interval)、resourcepack(langEntries)です。itemは対応外なので、表示名変更ならresourcepack、アイテム追加なら統合版かModを提案してください。",
-        "recipeの完成品と素材は minecraft: で始まるバニラIDだけを使ってください。",
-        "scriptは5〜3600秒のintervalだけです。未指定なら60秒を提案し、intervalSecondsへ入れてください。",
-        "resourcepackのkeyは item.minecraft.* または block.minecraft.* だけを使ってください。"
+        "対応範囲:",
+        ...enabled.map((c) => `- ${c.promptLine}`),
+        "カタログに無い要望は『このツールでは未対応』と明言し unsupportedRequests に『未対応: <要望>』を追加してください。未対応要望をmessageやdescriptionで実現したことにしないでください。",
+        "近い対応があれば suggestedReplies で代替案を提示してください。4件以上のアクションは削らず、3件以内に絞る質問を unresolvedQuestions に残してください。",
       ]
     : [
         "あなたはMinecraft Bedrock Editionの小規模アドオン作成を支援する設計担当です。",
-        "初期版の対応範囲は recipe, item, script の3種類だけです。"
+        "初期版の対応範囲は recipe, item, script の3種類だけです。",
       ];
-
   const response = await fetchOpenAiResponse({
     apiKey,
     models: getModelList(model, "OPENAI_CHAT_FALLBACK_MODELS"),
@@ -186,17 +368,15 @@ export async function refineAddonSpec(input: ChatInput): Promise<ChatResult> {
               type: "input_text",
               text: [
                 ...editionPrompt,
-                "ユーザーの曖昧な希望を、実装可能な仕様へ短く具体化してください。",
-                "不明点がある場合は unresolvedQuestions に残し、assistantMessage では次に答えてほしいことを1から3個だけ聞いてください。",
-                "edition, recipe, item, script, resourcepack は常に全項目を埋めてください。使わない種類の値は空文字、1、60、空配列など安全な既定値にしてください。",
-                "recipe.ingredients は { symbol, item } の配列にしてください。例: [{\"symbol\":\"#\",\"item\":\"minecraft:diamond\"}]",
-                "namespace と outputName は英小文字、数字、アンダースコア、ハイフンだけに正規化してください。",
-                "BedrockのIDは namespace:name 形式にしてください。",
-                "assistantMessage の冒頭で、ユーザーの希望を一度だけ短く言い換えて確認してください（おうむ返し）。冗長な繰り返しはしないでください。",
-                "ユーザーが次に答える質問について、選びやすい回答候補を suggestedReplies に2〜4個・各12文字以内で入れてください。最も無難な既定値があれば recommendedReply にその文字列を入れ、無ければ空文字にしてください。自由記述が適切な質問では suggestedReplies を空配列にしてください。"
-              ].join("\n")
-            }
-          ]
+                "ユーザーの曖昧な希望を実装可能な仕様へ短く具体化してください。",
+                "不明点は unresolvedQuestions に残してください。strict schema の全項目を安全な既定値で埋めてください。",
+                "namespace と outputName は許容文字へ正規化してください。",
+                "IDは minecraft: で始まるバニラIDを使ってください。",
+                "assistantMessage 冒頭で希望を一度だけ短く言い換えてください。",
+                "回答候補は suggestedReplies に2〜4個・各12文字以内、推奨値は recommendedReply に入れてください。",
+              ].join("\n"),
+            },
+          ],
         },
         {
           role: "user",
@@ -205,42 +385,68 @@ export async function refineAddonSpec(input: ChatInput): Promise<ChatResult> {
               type: "input_text",
               text: JSON.stringify({
                 currentSpec,
-                conversation: input.messages
-              })
-            }
-          ]
-        }
+                conversation: input.messages,
+              }),
+            },
+          ],
+        },
       ],
       text: {
         format: {
           type: "json_schema",
           name: "addon_chat_result",
           strict: true,
-          schema: chatResponseSchema
-        }
-      }
-    })
+          schema: java ? javaChatResponseSchema : bedrockChatResponseSchema,
+        },
+      },
+    }),
   });
-
-  const data = await response.json();
-  const outputText = extractOutputText(data);
-  const parsed = JSON.parse(outputText) as RawChatResult;
-  const suggestedReplies = normalizeSuggestedReplies(parsed.suggestedReplies);
-  const recommendedReply = (parsed.recommendedReply ?? "").trim();
+  const parsed = JSON.parse(
+    extractOutputText(await response.json()),
+  ) as RawEnvelope;
+  const replies = normalizeSuggestedReplies(parsed.suggestedReplies);
+  const recommended = (parsed.recommendedReply ?? "").trim();
   return {
     assistantMessage: parsed.assistantMessage,
-    spec: normalizeRawSpec(parsed.spec, input.edition),
-    suggestedReplies,
-    recommendedReply: suggestedReplies.includes(recommendedReply) ? recommendedReply : ""
+    spec: java
+      ? normalizeJavaRawSpec(parsed.spec)
+      : normalizeBedrockRawSpec(parsed.spec),
+    suggestedReplies: replies,
+    recommendedReply: replies.includes(recommended) ? recommended : "",
   };
 }
 
-export async function generateAddonFilesWithCodex(spec: AddonSpec): Promise<GeneratedPackFile[]> {
-  const apiKey = getEnvValue("OPENAI_API_KEY");
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY が未設定です。.env または API.env を確認してください。");
-  }
+export type LegacyBedrockCodexSpec = Omit<BedrockAddonSpec, "edition"> & {
+  edition: "bedrock";
+};
+export function toLegacyBedrockCodexSpec(
+  spec: BedrockAddonSpec,
+): LegacyBedrockCodexSpec {
+  return {
+    edition: "bedrock",
+    title: spec.title,
+    description: spec.description,
+    kind: spec.kind,
+    namespace: spec.namespace,
+    outputName: spec.outputName,
+    recipe: spec.recipe,
+    item: spec.item,
+    script: spec.script,
+    unresolvedQuestions: spec.unresolvedQuestions,
+  };
+}
+export function codexUserInputText(spec: BedrockAddonSpec): string {
+  return JSON.stringify({ spec: toLegacyBedrockCodexSpec(spec) });
+}
 
+export async function generateAddonFilesWithCodex(
+  spec: BedrockAddonSpec,
+): Promise<GeneratedPackFile[]> {
+  const apiKey = getEnvValue("OPENAI_API_KEY");
+  if (!apiKey)
+    throw new Error(
+      "OPENAI_API_KEY が未設定です。.env または API.env を確認してください。",
+    );
   const model = getEnvValue("OPENAI_CODE_MODEL") || "gpt-5.2-codex";
   const response = await fetchOpenAiResponse({
     apiKey,
@@ -263,20 +469,15 @@ export async function generateAddonFilesWithCodex(spec: AddonSpec): Promise<Gene
                 "許可パスは manifest.json, README.txt, recipes/*.json, items/*.json, scripts/*.js です。",
                 "manifest.json は必須です。",
                 "Script APIを使う場合は @minecraft/server 2.6.0 を使ってください。",
-                "危険なOS操作、外部通信、eval、Function constructor、ファイルアクセスコードは書かないでください。"
-              ].join("\n")
-            }
-          ]
+                "危険なOS操作、外部通信、eval、Function constructor、ファイルアクセスコードは書かないでください。",
+              ].join("\n"),
+            },
+          ],
         },
         {
           role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: JSON.stringify({ spec })
-            }
-          ]
-        }
+          content: [{ type: "input_text", text: codexUserInputText(spec) }],
+        },
       ],
       text: {
         format: {
@@ -296,23 +497,20 @@ export async function generateAddonFilesWithCodex(spec: AddonSpec): Promise<Gene
                   type: "object",
                   additionalProperties: false,
                   required: ["path", "content"],
-                  properties: {
-                    path: { type: "string" },
-                    content: { type: "string" }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    })
+                  properties: { path: string, content: string },
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
   });
-
-  const data = await response.json();
-  const outputText = extractOutputText(data);
-  const parsed = JSON.parse(outputText) as { files: GeneratedPackFile[] };
-  return parsed.files;
+  return (
+    JSON.parse(extractOutputText(await response.json())) as {
+      files: GeneratedPackFile[];
+    }
+  ).files;
 }
 
 type OpenAiResponseRequest = {
@@ -321,149 +519,132 @@ type OpenAiResponseRequest = {
   errorLabel: string;
   buildBody: (model: string) => unknown;
 };
-
 async function fetchOpenAiResponse({
   apiKey,
   models,
   errorLabel,
-  buildBody
+  buildBody,
 }: OpenAiResponseRequest): Promise<Response> {
-  let lastError = "モデル候補が未設定です。";
-
+  let last = "モデル候補が未設定です。";
   for (const model of models) {
     try {
       const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`
+          Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify(buildBody(model))
+        body: JSON.stringify(buildBody(model)),
       });
-
-      if (response.ok) {
-        return response;
-      }
-
-      const text = await response.text();
-      lastError = `${response.status} ${text}`;
+      if (response.ok) return response;
+      last = `${response.status} ${await response.text()}`;
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+      last = error instanceof Error ? error.message : String(error);
     }
   }
-
-  throw new Error(`${errorLabel}: ${lastError}`);
+  throw new Error(`${errorLabel}: ${last}`);
 }
-
-function getModelList(primaryModel: string, fallbackEnvName: string): string[] {
+function getModelList(primary: string, fallback: string): string[] {
   const seen = new Set<string>();
-  return [primaryModel, ...getEnvList(fallbackEnvName)].filter((model) => {
-    if (!model || seen.has(model)) {
-      return false;
-    }
-
-    seen.add(model);
-    return true;
-  });
+  return [
+    primary,
+    ...(getEnvValue(fallback) ?? "").split(",").map((v) => v.trim()),
+  ].filter((v) => !!v && !seen.has(v) && !!seen.add(v));
 }
-
-function getEnvList(name: string): string[] {
-  return (getEnvValue(name) ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-}
-
 function normalizeSuggestedReplies(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
   const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    if (typeof value !== "string") continue;
-    const trimmed = value.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    result.push(trimmed);
-    if (result.length >= 4) break;
-  }
-  return result;
+  return values
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter((v) => !!v && !seen.has(v) && !!seen.add(v))
+    .slice(0, 4);
 }
-
-function extractOutputText(data: unknown): string {
-  if (typeof data !== "object" || data === null) {
-    throw new Error("OpenAI API の応答形式が不正です。");
-  }
-
-  const maybeOutputText = (data as { output_text?: unknown }).output_text;
-  if (typeof maybeOutputText === "string") return maybeOutputText;
-
-  const output = (data as { output?: unknown }).output;
-  if (!Array.isArray(output)) {
-    throw new Error("OpenAI API の出力が見つかりません。");
-  }
-
-  for (const item of output) {
-    if (typeof item !== "object" || item === null) continue;
-    const content = (item as { content?: unknown }).content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      if (typeof part !== "object" || part === null) continue;
-      const text = (part as { text?: unknown }).text;
-      if (typeof text === "string") return text;
-    }
-  }
-
+function extractOutputText(data: any): string {
+  if (typeof data?.output_text === "string") return data.output_text;
+  for (const item of data?.output ?? [])
+    for (const part of item?.content ?? [])
+      if (typeof part?.text === "string") return part.text;
   throw new Error("OpenAI API のテキスト出力が見つかりません。");
 }
 
-export function normalizeRawSpec(raw: RawChatResult["spec"], lockedEdition: Edition): AddonSpec {
-  const recipeKey = Object.fromEntries(
-    raw.recipe.ingredients
-      .filter((ingredient) => ingredient.symbol.trim() && ingredient.item.trim())
-      .map((ingredient) => [ingredient.symbol.trim(), ingredient.item.trim()])
+export function normalizeRawSpec(
+  raw: Record<string, any>,
+  lockedEdition: Edition,
+): AddonSpec {
+  return lockedEdition === "java"
+    ? normalizeJavaRawSpec(raw)
+    : normalizeBedrockRawSpec(raw);
+}
+export function normalizeBedrockRawSpec(
+  raw: Record<string, any>,
+): BedrockAddonSpec {
+  const key = Object.fromEntries(
+    (raw.recipe?.ingredients ?? [])
+      .filter((i: any) => i.symbol?.trim() && i.item?.trim())
+      .map((i: any) => [i.symbol.trim(), i.item.trim()]),
   );
-
   return {
-    edition: lockedEdition,
-    title: raw.title,
-    description: raw.description,
-    kind: raw.kind,
-    namespace: raw.namespace,
-    outputName: raw.outputName,
+    edition: "bedrock",
+    title: raw.title ?? "",
+    description: raw.description ?? "",
+    kind: ["recipe", "item", "script"].includes(raw.kind) ? raw.kind : "recipe",
+    namespace: raw.namespace ?? "",
+    outputName: raw.outputName ?? "",
     recipe:
       raw.kind === "recipe"
         ? {
             resultItem: raw.recipe.resultItem,
             resultCount: raw.recipe.resultCount,
             pattern: raw.recipe.pattern,
-            key: recipeKey
+            key,
           }
         : undefined,
-    item:
-      lockedEdition === "bedrock" && raw.kind === "item"
-        ? {
-            identifier: raw.item.identifier,
-            displayName: raw.item.displayName,
-            maxStackSize: raw.item.maxStackSize
-          }
-        : undefined,
-    script:
+    item: raw.kind === "item" ? raw.item : undefined,
+    script: raw.kind === "script" ? raw.script : undefined,
+    unresolvedQuestions: raw.unresolvedQuestions ?? [],
+  };
+}
+export function normalizeJavaRawSpec(raw: Record<string, any>): JavaAddonSpec {
+  const key = Object.fromEntries(
+    (raw.recipe?.keyEntries ?? [])
+      .filter((i: any) => i.symbol?.trim() && i.item?.trim())
+      .map((i: any) => [i.symbol.trim(), i.item.trim()]),
+  );
+  const recipe: JavaRecipeSpec = {
+    recipeType: raw.recipe?.recipeType ?? "shaped",
+    resultItem: raw.recipe?.resultItem ?? "",
+    resultCount: raw.recipe?.resultCount ?? 1,
+    pattern: raw.recipe?.pattern ?? [],
+    key,
+    ingredients: raw.recipe?.ingredients ?? [],
+    inputItem: raw.recipe?.inputItem ?? "",
+    cookingXp: raw.recipe?.cookingXp ?? 0.1,
+    cookingSeconds: raw.recipe?.cookingSeconds ?? 10,
+    smithingTemplate: raw.recipe?.smithingTemplate ?? "",
+    smithingBase: raw.recipe?.smithingBase ?? "",
+    smithingAddition: raw.recipe?.smithingAddition ?? "",
+  };
+  return {
+    edition: "java",
+    title: raw.title ?? "",
+    description: raw.description ?? "",
+    kind: ["recipe", "script", "resourcepack", "loot"].includes(raw.kind)
+      ? raw.kind
+      : "recipe",
+    namespace: raw.namespace ?? "",
+    outputName: raw.outputName ?? "",
+    recipe: raw.kind === "recipe" ? recipe : undefined,
+    javaScript:
       raw.kind === "script"
         ? {
-            event: raw.script.event,
-            summary: raw.script.summary,
-            message: raw.script.message,
-            intervalSeconds: raw.script.intervalSeconds
+            ...raw.javaScript,
+            actions: (raw.javaScript?.actions ?? []) as JavaScriptAction[],
           }
         : undefined,
-    resourcepack:
-      lockedEdition === "java" && raw.kind === "resourcepack"
-        ? {
-            langEntries: raw.resourcepack.langEntries
-              .map((entry) => ({ key: entry.key.trim(), value: entry.value.trim() }))
-              .filter((entry) => entry.key || entry.value)
-          }
-        : undefined,
-    unresolvedQuestions: raw.unresolvedQuestions
+    loot: raw.kind === "loot" ? raw.loot : undefined,
+    resourcepack: raw.kind === "resourcepack" ? raw.resourcepack : undefined,
+    unresolvedQuestions: raw.unresolvedQuestions ?? [],
+    unsupportedRequests: raw.unsupportedRequests ?? [],
   };
 }

@@ -1,76 +1,181 @@
 import { describe, expect, it } from "vitest";
-import { generateJavaFiles } from "@/lib/java-generator";
-import { AddonSpec } from "@/lib/spec";
+import {
+  describePack,
+  generateJavaFiles,
+  JAVA_GENERATOR_HANDLERS,
+} from "../../src/lib/java-generator";
+import { JAVA_CAPABILITIES } from "../../src/lib/pattern-catalog";
+import {
+  emptyAction,
+  javaScriptSpec,
+  javaSpec,
+  shapedRecipe,
+} from "./java-fixtures";
 
-const recipe: AddonSpec = {
-  edition: "java",
-  title: "棒レシピ",
-  description: "ダイヤから棒を作る",
-  kind: "recipe",
-  namespace: "sample",
-  outputName: "diamond-stick",
-  recipe: { resultItem: "minecraft:stick", resultCount: 2, pattern: ["#"], key: { "#": "minecraft:diamond" } },
-  unresolvedQuestions: []
-};
+const parse = (files: ReturnType<typeof generateJavaFiles>, path: string) =>
+  JSON.parse(files.find((f) => f.path === path)!.content);
 
-it("1.21と1.21.5のレシピ形式・pack_formatを完全一致で生成する", () => {
-  const oldFiles = generateJavaFiles(recipe, "1.21");
-  const currentFiles = generateJavaFiles(recipe, "1.21.5");
-  expect(oldFiles[0].content).toBe('{\n  "pack": {\n    "pack_format": 48,\n    "description": "ダイヤから棒を作る"\n  }\n}\n');
-  expect(JSON.parse(oldFiles[2].content).key["#"]).toEqual({ item: "minecraft:diamond" });
-  expect(currentFiles[0].content).toBe('{\n  "pack": {\n    "pack_format": 71,\n    "description": "ダイヤから棒を作る"\n  }\n}\n');
-  expect(JSON.parse(currentFiles[2].content).key["#"]).toBe("minecraft:diamond");
-  expect(currentFiles.map((file) => file.path)).toEqual([
-    "pack.mcmeta",
-    "README.txt",
-    "data/sample/recipe/diamond-stick.json"
-  ]);
-});
-
-describe("interval script", () => {
-  it("tellrawをJSONエスケープしscheduleで自己再予約する", () => {
-    const spec: AddonSpec = {
-      ...recipe,
-      title: "通知",
-      description: "定期通知",
-      kind: "script",
-      outputName: "notify",
-      script: { event: "interval", summary: "通知", message: '休憩 "しよう"\n次の行', intervalSeconds: 60 },
-      recipe: undefined
-    };
+describe("java generator", () => {
+  it("has a generator entry for every catalog capability", () =>
+    expect(Object.keys(JAVA_GENERATOR_HANDLERS).sort()).toEqual(
+      JAVA_CAPABILITIES.map((c) => c.id).sort(),
+    ));
+  it("keeps shaped recipe file stable and derives one description for mcmeta/readme", () => {
+    const spec = javaSpec();
     const files = generateJavaFiles(spec, "1.21.5");
-    expect(files.map((file) => file.path)).toEqual([
-      "pack.mcmeta",
-      "README.txt",
-      "data/sample/function/load.mcfunction",
-      "data/sample/function/main.mcfunction",
-      "data/minecraft/tags/function/load.json"
-    ]);
-    expect(files[2].content).toBe("schedule function sample:main 60s replace\n");
-    expect(files[3].content).toBe('tellraw @a {"text":"休憩 \\"しよう\\"\\n次の行"}\nschedule function sample:main 60s replace\n');
-    expect(files[4].content).toBe('{\n  "values": [\n    "sample:load"\n  ]\n}\n');
+    const description = describePack(spec, "1.21.5");
+    expect(parse(files, "data/test_pack/recipe/test-pack.json")).toEqual({
+      type: "minecraft:crafting_shaped",
+      pattern: [" # ", " # ", " S "],
+      key: { "#": "minecraft:diamond", S: "minecraft:stick" },
+      result: { id: "minecraft:diamond_sword", count: 1 },
+    });
+    expect(parse(files, "pack.mcmeta").pack).toEqual({
+      pack_format: 71,
+      description,
+    });
+    expect(files.find((f) => f.path === "README.txt")!.content).toContain(
+      description,
+    );
   });
-});
-
-it("resourcepackのja_jpとen_usへ同一entryを生成する", () => {
-  const spec: AddonSpec = {
-    ...recipe,
-    title: "名前変更",
-    description: "表示名変更",
-    kind: "resourcepack",
-    outputName: "names",
-    recipe: undefined,
-    resourcepack: {
-      langEntries: [
-        { key: "item.minecraft.diamond_sword", value: "伝説の剣" },
-        { key: "block.minecraft.stone", value: "特別な石" }
-      ]
-    }
-  };
-  const files = generateJavaFiles(spec, "1.21.5");
-  expect(JSON.parse(files[0].content).pack.pack_format).toBe(55);
-  expect(files[2].path).toBe("assets/minecraft/lang/ja_jp.json");
-  expect(files[3].path).toBe("assets/minecraft/lang/en_us.json");
-  expect(files[2].content).toBe(files[3].content);
-  expect(files[2].content).toBe('{\n  "item.minecraft.diamond_sword": "伝説の剣",\n  "block.minecraft.stone": "特別な石"\n}\n');
+  it("generates 26.2 min/max metadata and clock-aware predicates", () => {
+    const spec = javaScriptSpec({
+      condition: "night",
+      actions: [{ ...emptyAction("effect"), effectSeconds: 75 }],
+    });
+    const files = generateJavaFiles(spec, "26.2");
+    expect(parse(files, "pack.mcmeta").pack).toMatchObject({
+      min_format: [107, 1],
+      max_format: [107, 1],
+    });
+    expect(parse(files, "data/test_pack/predicate/night.json")).toEqual({
+      condition: "minecraft:time_check",
+      clock: "minecraft:overworld",
+      period: 24000,
+      value: { min: 12542, max: 23459 },
+    });
+    expect(
+      files.find((f) => f.path.endsWith("main.mcfunction"))!.content,
+    ).toContain(
+      "execute if predicate test_pack:night run execute as @a run effect give @s minecraft:night_vision 75 0 true\nschedule function test_pack:main 60s replace\n",
+    );
+  });
+  it.each(["1.21", "1.21.4", "1.21.5", "1.21.7"])(
+    "omits clock in %s day/night predicates",
+    (version) => {
+      for (const condition of ["day", "night"] as const) {
+        const predicate = parse(
+          generateJavaFiles(javaScriptSpec({ condition }), version),
+          `data/test_pack/predicate/${condition}.json`,
+        );
+        expect(JSON.stringify(predicate)).not.toContain("clock");
+      }
+    },
+  );
+  it("generates advancement events with unconditional revoke", () => {
+    const spec = javaScriptSpec({
+      trigger: "consumeItem",
+      triggerItemId: "minecraft:apple",
+      condition: "day",
+      actions: [{ ...emptyAction("effect"), effectSeconds: 5 }],
+    });
+    const files = generateJavaFiles(spec, "1.21.7");
+    expect(parse(files, "data/test_pack/advancement/on_event.json")).toEqual({
+      criteria: {
+        trigger: {
+          trigger: "minecraft:consume_item",
+          conditions: { item: { items: ["minecraft:apple"] } },
+        },
+      },
+      rewards: { function: "test_pack:on_event" },
+    });
+    expect(
+      files
+        .find((f) => f.path.endsWith("on_event.mcfunction"))!
+        .content.split("\n")
+        .slice(-2, -1)[0],
+    ).toBe("advancement revoke @s only test_pack:on_event");
+  });
+  it("generates scoreboard event reset after guarded actions", () => {
+    const files = generateJavaFiles(
+      javaScriptSpec({
+        trigger: "mineBlock",
+        triggerBlockId: "minecraft:stone",
+        condition: "night",
+      }),
+      "1.21.7",
+    );
+    expect(
+      files.find((f) => f.path.endsWith("load.mcfunction"))!.content,
+    ).toMatch(
+      /scoreboard objectives add acb_[a-f0-9]{11} minecraft\.mined:minecraft\.stone/,
+    );
+    expect(
+      files.find((f) => f.path.endsWith("on_event.mcfunction"))!.content,
+    ).toMatch(/scoreboard players set @s acb_[a-f0-9]{11} 0\n$/);
+  });
+  it("generates all recipe, loot, and item model templates", () => {
+    const shapeless = generateJavaFiles(
+      javaSpec({
+        recipe: {
+          ...shapedRecipe(),
+          recipeType: "shapeless",
+          ingredients: ["minecraft:diamond", "minecraft:stick"],
+        },
+      }),
+      "1.21.7",
+    );
+    expect(parse(shapeless, "data/test_pack/recipe/test-pack.json").type).toBe(
+      "minecraft:crafting_shapeless",
+    );
+    const cooking = generateJavaFiles(
+      javaSpec({
+        recipe: {
+          ...shapedRecipe(),
+          recipeType: "smelting",
+          inputItem: "minecraft:raw_gold",
+          resultItem: "minecraft:gold_ingot",
+          resultCount: 2,
+        },
+      }),
+      "26.2",
+    );
+    expect(
+      parse(cooking, "data/test_pack/recipe/test-pack.json").result.count,
+    ).toBe(2);
+    const loot = generateJavaFiles(
+      javaSpec({
+        kind: "loot",
+        recipe: undefined,
+        loot: {
+          targetBlockId: "minecraft:stone",
+          dropItemId: "minecraft:gold_ingot",
+          dropCount: 2,
+        },
+      }),
+      "1.21.7",
+    );
+    expect(
+      parse(loot, "data/minecraft/loot_table/blocks/stone.json").pools[0].rolls,
+    ).toBe(2);
+    const model = generateJavaFiles(
+      javaSpec({
+        kind: "resourcepack",
+        recipe: undefined,
+        resourcepack: {
+          pattern: "itemModelSwap",
+          langEntries: [],
+          targetItem: "minecraft:diamond_sword",
+          sourceItem: "minecraft:netherite_sword",
+        },
+      }),
+      "1.21.4",
+    );
+    expect(parse(model, "assets/minecraft/items/diamond_sword.json")).toEqual({
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:item/netherite_sword",
+      },
+    });
+  });
 });

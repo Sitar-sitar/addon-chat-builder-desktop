@@ -1,16 +1,33 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   IconCheck,
   IconHeart,
   IconLock,
   IconPencil,
   IconPlayerPlay,
-  IconRefresh
+  IconRefresh,
 } from "@tabler/icons-react";
-import { AddonSpec, createEmptySpec, type Edition, validateSpec } from "@/lib/spec";
+import {
+  AddonSpec,
+  createEmptySpec,
+  type Edition,
+  validateSpec,
+} from "@/lib/spec";
 import { blueprintRows, stepState, type StepStatus } from "@/utils/addon-view";
+import {
+  starterPromptsForCapabilities,
+  type JavaCapabilityId,
+} from "@/lib/pattern-catalog";
+import type { JavaVersionRule } from "@/lib/pack-rules";
 
 type Message = {
   role: "user" | "assistant";
@@ -20,12 +37,14 @@ type Message = {
 type BuildResult = {
   packPath: string;
   files: string[];
+  description: string;
 };
 
-const starterPrompts: Record<Edition, string[]> = {
-  bedrock: ["雷を出せる槍を作りたい", "新しいアイテムを追加したい", "特定の行動をしたらチャットに通知したい"],
-  java: ["新しい武器レシピを作りたい", "アイテムの表示名を変えたい（リソースパック）", "1分ごとにチャットへメッセージを流したい"]
-};
+const bedrockStarterPrompts = [
+  "雷を出せる槍を作りたい",
+  "新しいアイテムを追加したい",
+  "特定の行動をしたらチャットに通知したい",
+];
 
 function initialMessage(edition: Edition): string {
   return edition === "java"
@@ -35,7 +54,9 @@ function initialMessage(edition: Edition): string {
 
 export default function Home() {
   const [edition, setEdition] = useState<Edition>("bedrock");
-  const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: initialMessage("bedrock") }]);
+  const [messages, setMessages] = useState<Message[]>([
+    { role: "assistant", content: initialMessage("bedrock") },
+  ]);
   const [input, setInput] = useState("");
   const [spec, setSpec] = useState<AddonSpec>(() => createEmptySpec("bedrock"));
   const [outputDir, setOutputDir] = useState("");
@@ -46,23 +67,52 @@ export default function Home() {
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
   const [recommendedReply, setRecommendedReply] = useState("");
   const [javaTargetVersion, setJavaTargetVersion] = useState("");
+  const [javaCapabilities, setJavaCapabilities] = useState<JavaCapabilityId[]>(
+    [],
+  );
+  const [javaVersionRule, setJavaVersionRule] = useState<JavaVersionRule>();
   const [configError, setConfigError] = useState("");
 
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const generationRef = useRef(0);
 
-  const specErrors = useMemo(() => validateSpec(spec), [spec]);
-  const canBuild = specErrors.length === 0;
+  const specErrors = useMemo(
+    () => validateSpec(spec, javaCapabilities, javaVersionRule),
+    [spec, javaCapabilities, javaVersionRule],
+  );
+  const javaGateOpen =
+    spec.edition !== "java" ||
+    (!!javaTargetVersion &&
+      spec.unresolvedQuestions.length === 0 &&
+      spec.unsupportedRequests.length === 0);
+  const canBuild = specErrors.length === 0 && javaGateOpen;
   const hasStarted = messages.some((message) => message.role === "user");
   const step = stepState({ hasStarted, canBuild, built: !!buildResult });
-  const rows = useMemo(() => blueprintRows(spec, javaTargetVersion), [spec, javaTargetVersion]);
-  const remaining = rows.filter((row) => row.status === "current" || row.status === "pending").length;
+  const rows = useMemo(
+    () =>
+      blueprintRows(spec, javaTargetVersion, javaCapabilities, javaVersionRule),
+    [spec, javaTargetVersion, javaCapabilities, javaVersionRule],
+  );
+  const starterPrompts = useMemo(
+    () =>
+      edition === "java"
+        ? starterPromptsForCapabilities(javaCapabilities)
+        : bedrockStarterPrompts,
+    [edition, javaCapabilities],
+  );
+  const remaining = rows.filter(
+    (row) => row.status === "current" || row.status === "pending",
+  ).length;
   const isBusy = isChatting || isBuilding || isSelectingOutput;
 
   const lastIsAssistant = messages[messages.length - 1]?.role === "assistant";
   const showReadyCta = canBuild && !isChatting && !buildResult;
-  const showChips = !showReadyCta && !isChatting && suggestedReplies.length > 0 && lastIsAssistant;
+  const showChips =
+    !showReadyCta &&
+    !isChatting &&
+    suggestedReplies.length > 0 &&
+    lastIsAssistant;
   const buildLabel = getBuildLabel(spec);
 
   useEffect(() => {
@@ -70,12 +120,20 @@ export default function Home() {
     void fetch("/api/config")
       .then(async (response) => {
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error ?? "Java版設定の取得に失敗しました。");
-        if (active) setJavaTargetVersion(data.javaTargetVersion);
+        if (!response.ok)
+          throw new Error(data.error ?? "Java版設定の取得に失敗しました。");
+        if (active) {
+          setJavaTargetVersion(data.javaTargetVersion);
+          setJavaCapabilities(data.javaCapabilities ?? []);
+          setJavaVersionRule(data.javaVersionRule);
+        }
       })
       .catch((caught) => {
         if (!active) return;
-        const message = caught instanceof Error ? caught.message : "Java版設定の取得に失敗しました。";
+        const message =
+          caught instanceof Error
+            ? caught.message
+            : "Java版設定の取得に失敗しました。";
         setConfigError(message);
       });
     return () => {
@@ -93,7 +151,10 @@ export default function Home() {
 
     const generation = generationRef.current;
     const requestEdition = edition;
-    const nextMessages: Message[] = [...messages, { role: "user", content: trimmed }];
+    const nextMessages: Message[] = [
+      ...messages,
+      { role: "user", content: trimmed },
+    ];
     setMessages(nextMessages);
     setInput("");
     setBuildResult(null);
@@ -105,20 +166,34 @@ export default function Home() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages, currentSpec: spec, edition: requestEdition })
+        body: JSON.stringify({
+          messages: nextMessages,
+          currentSpec: spec,
+          edition: requestEdition,
+        }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "AI応答の取得に失敗しました。");
+      if (!response.ok)
+        throw new Error(data.error ?? "AI応答の取得に失敗しました。");
       if (generation !== generationRef.current) return;
 
       setSpec(data.spec);
-      setMessages([...nextMessages, { role: "assistant", content: data.assistantMessage }]);
+      setMessages([
+        ...nextMessages,
+        { role: "assistant", content: data.assistantMessage },
+      ]);
       setSuggestedReplies(data.suggestedReplies ?? []);
       setRecommendedReply(data.recommendedReply ?? "");
     } catch (caught) {
       if (generation !== generationRef.current) return;
-      const message = caught instanceof Error ? caught.message : "AI応答の取得に失敗しました。";
-      setMessages([...nextMessages, { role: "assistant", content: `エラーが発生しました。\n${message}` }]);
+      const message =
+        caught instanceof Error
+          ? caught.message
+          : "AI応答の取得に失敗しました。";
+      setMessages([
+        ...nextMessages,
+        { role: "assistant", content: `エラーが発生しました。\n${message}` },
+      ]);
     } finally {
       if (generation === generationRef.current) setIsChatting(false);
     }
@@ -130,7 +205,11 @@ export default function Home() {
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing
+    ) {
       event.preventDefault();
       void sendText(input);
     }
@@ -145,21 +224,29 @@ export default function Home() {
       const response = await fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spec, outputDir })
+        body: JSON.stringify({ spec, outputDir }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "パック生成に失敗しました。");
+      if (!response.ok)
+        throw new Error(data.error ?? "パック生成に失敗しました。");
       if (generation !== generationRef.current) return;
 
       setBuildResult(data);
       setMessages((current) => [
         ...current,
-        { role: "assistant", content: `完成！ ${getPackName(spec)}を生成しました。\n${data.packPath}` }
+        {
+          role: "assistant",
+          content: `完成！ ${getPackName(spec)}を生成しました。\n${data.packPath}`,
+        },
       ]);
     } catch (caught) {
       if (generation !== generationRef.current) return;
-      const message = caught instanceof Error ? caught.message : "パック生成に失敗しました。";
-      setMessages((current) => [...current, { role: "assistant", content: `生成に失敗しました。\n${message}` }]);
+      const message =
+        caught instanceof Error ? caught.message : "パック生成に失敗しました。";
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", content: `生成に失敗しました。\n${message}` },
+      ]);
     } finally {
       if (generation === generationRef.current) setIsBuilding(false);
     }
@@ -173,16 +260,26 @@ export default function Home() {
       const response = await fetch("/api/select-folder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentPath: outputDir })
+        body: JSON.stringify({ currentPath: outputDir }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "フォルダ選択に失敗しました。");
+      if (!response.ok)
+        throw new Error(data.error ?? "フォルダ選択に失敗しました。");
       if (generation !== generationRef.current) return;
       if (!data.canceled && data.path) setOutputDir(data.path);
     } catch (caught) {
       if (generation !== generationRef.current) return;
-      const message = caught instanceof Error ? caught.message : "フォルダ選択に失敗しました。";
-      setMessages((current) => [...current, { role: "assistant", content: `フォルダ選択に失敗しました。\n${message}` }]);
+      const message =
+        caught instanceof Error
+          ? caught.message
+          : "フォルダ選択に失敗しました。";
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: `フォルダ選択に失敗しました。\n${message}`,
+        },
+      ]);
     } finally {
       if (generation === generationRef.current) setIsSelectingOutput(false);
     }
@@ -190,7 +287,12 @@ export default function Home() {
 
   function switchEdition(nextEdition: Edition) {
     if (nextEdition === edition || isBusy) return;
-    if (hasStarted && !window.confirm("エディションを切り替えると現在の会話と仕様がリセットされます。続けますか？")) {
+    if (
+      hasStarted &&
+      !window.confirm(
+        "エディションを切り替えると現在の会話と仕様がリセットされます。続けますか？",
+      )
+    ) {
       return;
     }
     resetWorkspace(nextEdition);
@@ -215,11 +317,19 @@ export default function Home() {
     <main className="app-shell">
       <section className="topbar">
         <div>
-          <p className="eyebrow">{edition === "java" ? "MINECRAFT JAVA EDITION" : "MINECRAFT BEDROCK"}</p>
+          <p className="eyebrow">
+            {edition === "java"
+              ? "MINECRAFT JAVA EDITION"
+              : "MINECRAFT BEDROCK"}
+          </p>
           <h1>ADDON CHAT BUILDER</h1>
         </div>
         <div className="topbar-right">
-          <div className="edition-switch" role="group" aria-label="Minecraftエディション">
+          <div
+            className="edition-switch"
+            role="group"
+            aria-label="Minecraftエディション"
+          >
             <button
               className={edition === "bedrock" ? "active" : ""}
               type="button"
@@ -245,13 +355,21 @@ export default function Home() {
             <IconHeart size={20} />
             <IconHeart size={20} />
           </span>
-          <button className="btn" type="button" onClick={() => resetWorkspace(edition)}>
+          <button
+            className="btn"
+            type="button"
+            onClick={() => resetWorkspace(edition)}
+          >
             リセット
           </button>
         </div>
       </section>
 
-      {configError && <div className="warning-box config-warning">Java版設定エラー: {configError}</div>}
+      {configError && (
+        <div className="warning-box config-warning">
+          Java版設定エラー: {configError}
+        </div>
+      )}
       <Stepper step={step} />
 
       <section className="focus-layout">
@@ -259,16 +377,22 @@ export default function Home() {
           {!hasStarted && (
             <div className="chat-hero">
               <p className="kicker">START HERE</p>
-              <h2>{edition === "java" ? "Java版で何を作りたいですか？" : "どんなアドオンを作りたいですか？"}</h2>
+              <h2>
+                {edition === "java"
+                  ? "Java版で何を作りたいですか？"
+                  : "どんなアドオンを作りたいですか？"}
+              </h2>
               <p>まずは一文で。足りない情報はAIが順番に聞きます。</p>
               <div className="starter-grid" aria-label="作成例">
-                {starterPrompts[edition].map((prompt) => (
+                {starterPrompts.map((prompt) => (
                   <button
                     className="btn starter-button"
                     type="button"
                     key={prompt}
                     onClick={() => sendText(prompt)}
-                    disabled={isChatting}
+                    disabled={
+                      isChatting || (edition === "java" && !javaTargetVersion)
+                    }
                   >
                     {prompt}
                   </button>
@@ -277,9 +401,17 @@ export default function Home() {
             </div>
           )}
 
-          <div className="message-list" role="log" aria-live="polite" aria-atomic="false">
+          <div
+            className="message-list"
+            role="log"
+            aria-live="polite"
+            aria-atomic="false"
+          >
             {messages.map((message, index) => (
-              <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
+              <div
+                className={`message ${message.role}`}
+                key={`${message.role}-${index}`}
+              >
                 <span>{message.role === "user" ? "ユーザー" : "AI"}</span>
                 <p>{message.content}</p>
               </div>
@@ -313,11 +445,20 @@ export default function Home() {
             <div className="ready-cta">
               <p>準備OK！ この内容で作れます。</p>
               <div className="ready-actions">
-                <button className="btn pri" type="button" onClick={buildPack} disabled={isBuilding}>
+                <button
+                  className="btn pri"
+                  type="button"
+                  onClick={buildPack}
+                  disabled={isBuilding}
+                >
                   <IconPlayerPlay size={18} aria-hidden="true" />
                   {isBuilding ? "生成中..." : buildLabel}
                 </button>
-                <button className="btn" type="button" onClick={() => inputRef.current?.focus()}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => inputRef.current?.focus()}
+                >
                   内容を直す
                 </button>
               </div>
@@ -337,7 +478,11 @@ export default function Home() {
               }
               rows={3}
             />
-            <button className="btn pri" type="submit" disabled={isChatting || !input.trim()}>
+            <button
+              className="btn pri"
+              type="submit"
+              disabled={isChatting || !input.trim()}
+            >
               送信
             </button>
           </form>
@@ -348,11 +493,18 @@ export default function Home() {
           <h2>{spec.title || "まだ作成内容は未確定です"}</h2>
 
           {rows.map((row, index) => (
-            <div className={`bp-row ${row.status}`} key={`${row.label}-${index}`}>
+            <div
+              className={`bp-row ${row.status}`}
+              key={`${row.label}-${index}`}
+            >
               <span className="bl">{row.label}</span>
               <span className="bv">{row.value}</span>
-              {row.status === "done" && <IconCheck className="bs ok" size={18} aria-hidden="true" />}
-              {row.status === "current" && <IconPencil className="bs cur" size={18} aria-hidden="true" />}
+              {row.status === "done" && (
+                <IconCheck className="bs ok" size={18} aria-hidden="true" />
+              )}
+              {row.status === "current" && (
+                <IconPencil className="bs cur" size={18} aria-hidden="true" />
+              )}
             </div>
           ))}
 
@@ -366,16 +518,34 @@ export default function Home() {
               <label htmlFor="outputDir">
                 出力先フォルダ{edition === "java" ? "（Java版 専用）" : ""}
               </label>
-              <input id="outputDir" value={outputDir} onChange={(event) => setOutputDir(event.target.value)} />
+              <input
+                id="outputDir"
+                value={outputDir}
+                onChange={(event) => setOutputDir(event.target.value)}
+              />
               <div className="output-actions">
-                <button className="btn" type="button" onClick={selectOutputDir} disabled={isSelectingOutput}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={selectOutputDir}
+                  disabled={isSelectingOutput}
+                >
                   {isSelectingOutput ? "選択中..." : "フォルダを選択"}
                 </button>
-                <button className="btn" type="button" onClick={() => setOutputDir("")}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => setOutputDir("")}
+                >
                   既定に戻す
                 </button>
               </div>
-              <button className="btn pri wide" type="button" onClick={buildPack} disabled={isBuilding}>
+              <button
+                className="btn pri wide"
+                type="button"
+                onClick={buildPack}
+                disabled={isBuilding}
+              >
                 <IconPlayerPlay size={18} aria-hidden="true" />
                 {isBuilding ? "生成中..." : buildLabel}
               </button>
@@ -385,13 +555,18 @@ export default function Home() {
           {buildResult && (
             <div className="result-box">
               <h3>生成完了</h3>
+              <p>{buildResult.description}</p>
               <p>{buildResult.packPath}</p>
               <ul>
                 {buildResult.files.map((file) => (
                   <li key={file}>{file}</li>
                 ))}
               </ul>
-              <button className="btn" type="button" onClick={() => resetWorkspace(edition)}>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => resetWorkspace(edition)}
+              >
                 <IconRefresh size={18} aria-hidden="true" />
                 続けて作る
               </button>
@@ -405,15 +580,23 @@ export default function Home() {
 
 function getBuildLabel(spec: AddonSpec): string {
   if (spec.edition === "bedrock") return ".mcpack を生成";
-  return spec.kind === "resourcepack" ? "リソースパック(.zip) を生成" : "データパック(.zip) を生成";
+  return spec.kind === "resourcepack"
+    ? "リソースパック(.zip) を生成"
+    : "データパック(.zip) を生成";
 }
 
 function getPackName(spec: AddonSpec): string {
   if (spec.edition === "bedrock") return ".mcpack";
-  return spec.kind === "resourcepack" ? "リソースパック(.zip)" : "データパック(.zip)";
+  return spec.kind === "resourcepack"
+    ? "リソースパック(.zip)"
+    : "データパック(.zip)";
 }
 
-function Stepper({ step }: { step: { kind: StepStatus; detail: StepStatus; build: StepStatus } }) {
+function Stepper({
+  step,
+}: {
+  step: { kind: StepStatus; detail: StepStatus; build: StepStatus };
+}) {
   return (
     <div className="stepper">
       <Step n="01" label="種類" status={step.kind} />
@@ -423,8 +606,21 @@ function Stepper({ step }: { step: { kind: StepStatus; detail: StepStatus; build
   );
 }
 
-function Step({ n, label, status }: { n: string; label: string; status: StepStatus }) {
-  const Icon = status === "done" ? IconCheck : status === "current" ? IconPencil : IconLock;
+function Step({
+  n,
+  label,
+  status,
+}: {
+  n: string;
+  label: string;
+  status: StepStatus;
+}) {
+  const Icon =
+    status === "done"
+      ? IconCheck
+      : status === "current"
+        ? IconPencil
+        : IconLock;
   return (
     <div className={`step ${status}`}>
       <span className="sn">{n}</span>
