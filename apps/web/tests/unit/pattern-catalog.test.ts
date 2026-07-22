@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   JAVA_CAPABILITIES,
   enabledJavaCapabilities,
+  type JavaCapabilityId,
 } from "../../src/lib/pattern-catalog";
 import { JAVA_GENERATOR_CAPABILITY_COVERAGE } from "../../src/lib/java-generator";
 import { JAVA_CAPABILITY_VALIDATORS } from "../../src/lib/spec";
@@ -28,6 +29,21 @@ describe("pattern catalog", () => {
     expect(Object.keys(JAVA_GENERATOR_CAPABILITY_COVERAGE).sort()).toEqual(
       ids,
     );
+  });
+  it("reproduces the v0.2.0 baseline at release phase 0", () => {
+    const baseline = [
+      "recipe.shaped",
+      "resourcepack.lang",
+      "script.action.message",
+      "script.trigger.interval",
+    ].sort();
+    for (const [version, rule] of Object.entries(JAVA_VERSIONS))
+      expect(
+        enabledJavaCapabilities(rule, 0)
+          .map((c) => c.id)
+          .sort(),
+        version,
+      ).toEqual(baseline);
   });
   it("gates every version and release phase deterministically", () => {
     for (const rule of Object.values(JAVA_VERSIONS))
@@ -60,10 +76,12 @@ describe("pattern catalog", () => {
         const errors = validateSpec(spec, enabled, rule);
         if (enabled.includes(capability.id)) {
           expect(errors, `${version} ${capability.id}`).toEqual([]);
+          const files = generateJavaFiles(spec, version);
+          // 有効 capability は期待するファイル集合ちょうどを生成する（版非依存の path 集合）。
           expect(
-            () => generateJavaFiles(spec, version),
+            files.map((f) => f.path).sort(),
             `${version} ${capability.id}`,
-          ).not.toThrow();
+          ).toEqual([...BASE_PATHS, ...EXPECTED_PATHS[capability.id]].sort());
         } else {
           expect(errors.join("\n"), `${version} ${capability.id}`).toContain(
             "未対応の機能",
@@ -77,6 +95,54 @@ describe("pattern catalog", () => {
     }
   });
 });
+
+// specFor の fixture（namespace=test_pack / outputName=test-pack）に対応する
+// 期待生成ファイル集合。pack.mcmeta / README.txt は全 capability 共通で加算する。
+const BASE_PATHS = ["pack.mcmeta", "README.txt"];
+const RECIPE_PATHS = ["data/test_pack/recipe/test-pack.json"];
+const SCRIPT_INTERVAL_PATHS = [
+  "data/test_pack/function/load.mcfunction",
+  "data/test_pack/function/main.mcfunction",
+  "data/minecraft/tags/function/load.json",
+];
+const SCRIPT_ADVANCEMENT_PATHS = [
+  "data/test_pack/advancement/on_event.json",
+  "data/test_pack/function/on_event.mcfunction",
+];
+const SCRIPT_SCOREBOARD_PATHS = [
+  "data/test_pack/function/load.mcfunction",
+  "data/test_pack/function/main.mcfunction",
+  "data/test_pack/function/on_event.mcfunction",
+  "data/minecraft/tags/function/load.json",
+];
+const EXPECTED_PATHS: Record<JavaCapabilityId, string[]> = {
+  "recipe.shaped": RECIPE_PATHS,
+  "recipe.shapeless": RECIPE_PATHS,
+  "recipe.cooking": RECIPE_PATHS,
+  "recipe.stonecutting": RECIPE_PATHS,
+  "recipe.smithing": RECIPE_PATHS,
+  "script.trigger.interval": SCRIPT_INTERVAL_PATHS,
+  "script.trigger.consumeItem": SCRIPT_ADVANCEMENT_PATHS,
+  "script.trigger.placedBlock": SCRIPT_ADVANCEMENT_PATHS,
+  "script.trigger.killEntity": SCRIPT_ADVANCEMENT_PATHS,
+  "script.trigger.mineBlock": SCRIPT_SCOREBOARD_PATHS,
+  "script.trigger.death": SCRIPT_SCOREBOARD_PATHS,
+  "script.action.message": SCRIPT_INTERVAL_PATHS,
+  "script.action.effect": SCRIPT_INTERVAL_PATHS,
+  "script.action.title": SCRIPT_INTERVAL_PATHS,
+  "script.action.actionbar": SCRIPT_INTERVAL_PATHS,
+  "script.action.playsound": SCRIPT_INTERVAL_PATHS,
+  "script.action.setTime": SCRIPT_INTERVAL_PATHS,
+  "script.action.setWeather": SCRIPT_INTERVAL_PATHS,
+  "loot.blockDrop": ["data/minecraft/loot_table/blocks/stone.json"],
+  "resourcepack.lang": [
+    "assets/minecraft/lang/ja_jp.json",
+    "assets/minecraft/lang/en_us.json",
+  ],
+  "resourcepack.itemModelSwap": [
+    "assets/minecraft/items/diamond_sword.json",
+  ],
+};
 
 function specFor(id: (typeof JAVA_CAPABILITIES)[number]["id"]): JavaAddonSpec {
   if (id.startsWith("recipe.")) {

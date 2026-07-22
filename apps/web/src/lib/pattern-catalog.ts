@@ -77,7 +77,7 @@ export const JAVA_CAPABILITIES = [
   c(
     "script.trigger.interval",
     "script",
-    1,
+    0,
     "定期実行",
     "5〜3600秒間隔の定期実行。未指定は60秒を提案する。",
   ),
@@ -120,7 +120,7 @@ export const JAVA_CAPABILITIES = [
   c(
     "script.action.message",
     "script",
-    1,
+    0,
     "チャット通知",
     "チャットへ固定文を表示する。",
   ),
@@ -158,14 +158,14 @@ export const JAVA_CAPABILITIES = [
     "script",
     4,
     "時刻固定",
-    "時刻を day/night/noon/midnight のいずれかへ固定する。",
+    "時刻を day/night/noon/midnight のいずれかへ固定する。定期実行トリガーでのみ使用可。",
   ),
   c(
     "script.action.setWeather",
     "script",
     4,
     "天候固定",
-    "天候を clear/rain/thunder のいずれかへ固定する。",
+    "天候を clear/rain/thunder のいずれかへ固定する。定期実行トリガーでのみ使用可。",
   ),
   c(
     "loot.blockDrop",
@@ -238,7 +238,8 @@ export function capabilitiesForSpec(spec: AddonSpec): JavaCapabilityId[] {
     )
       return ["recipe.cooking"];
     if (recipeType === "stonecutting") return ["recipe.stonecutting"];
-    return ["recipe.smithing"];
+    if (recipeType === "smithing_transform") return ["recipe.smithing"];
+    throw new Error(`未対応のレシピ種類です: ${recipeType}`);
   }
   if (spec.kind === "script") {
     if (!spec.javaScript) return [];
@@ -250,11 +251,17 @@ export function capabilitiesForSpec(spec: AddonSpec): JavaCapabilityId[] {
     ];
   }
   if (spec.kind === "loot") return ["loot.blockDrop"];
-  return [
-    spec.resourcepack?.pattern === "itemModelSwap"
-      ? "resourcepack.itemModelSwap"
-      : "resourcepack.lang",
-  ];
+  if (spec.kind === "resourcepack") {
+    if (spec.resourcepack?.pattern === "itemModelSwap")
+      return ["resourcepack.itemModelSwap"];
+    // resourcepack 未設定は既定 lang（会話途中の既定挙動を維持）。未知“値”だけを弾く。
+    if (!spec.resourcepack || spec.resourcepack.pattern === "lang")
+      return ["resourcepack.lang"];
+    throw new Error(
+      `未対応のリソースパック種別です: ${spec.resourcepack.pattern}`,
+    );
+  }
+  throw new Error(`未対応の種類です: ${spec.kind}`);
 }
 
 export function starterPromptsForCapabilities(

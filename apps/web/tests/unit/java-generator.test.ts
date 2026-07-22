@@ -178,6 +178,58 @@ describe("java generator", () => {
       },
     });
   });
+  it("throws on unknown discriminants in the generator", () => {
+    expect(() =>
+      generateJavaFiles(
+        javaSpec({ recipe: { ...shapedRecipe(), recipeType: "brewing" as never } }),
+        "1.21.7",
+      ),
+    ).toThrow("未対応");
+    expect(() =>
+      generateJavaFiles({ ...javaSpec(), kind: "mystery" } as never, "1.21.7"),
+    ).toThrow("未対応");
+    expect(() =>
+      generateJavaFiles(
+        javaSpec({
+          kind: "resourcepack",
+          recipe: undefined,
+          resourcepack: {
+            pattern: "shader" as never,
+            langEntries: [],
+            targetItem: "",
+            sourceItem: "",
+          },
+        }),
+        "1.21.7",
+      ),
+    ).toThrow("未対応");
+  });
+  it("writes pack-type specific install instructions in the README", () => {
+    const readmeOf = (files: ReturnType<typeof generateJavaFiles>) =>
+      files.find((f) => f.path === "README.txt")!.content;
+    const datapack = readmeOf(generateJavaFiles(javaSpec(), "1.21.7"));
+    expect(datapack).toContain("saves\\<ワールド名>\\datapacks");
+    expect(datapack).toContain("/datapack list enabled");
+    expect(datapack).not.toContain("resourcepacks");
+    const resourcepack = readmeOf(
+      generateJavaFiles(
+        javaSpec({
+          kind: "resourcepack",
+          recipe: undefined,
+          resourcepack: {
+            pattern: "lang",
+            langEntries: [{ key: "item.minecraft.apple", value: "りんご" }],
+            targetItem: "",
+            sourceItem: "",
+          },
+        }),
+        "1.21.7",
+      ),
+    );
+    expect(resourcepack).toContain("resourcepacks");
+    expect(resourcepack).toContain("設定 > リソースパック");
+    expect(resourcepack).not.toContain("datapacks");
+  });
   it("adds the namespace collision note only to script README files", () => {
     const readmeOf = (files: ReturnType<typeof generateJavaFiles>) =>
       files.find((f) => f.path === "README.txt")!.content;

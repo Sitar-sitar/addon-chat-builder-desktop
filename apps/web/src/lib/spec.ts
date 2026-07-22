@@ -128,6 +128,19 @@ const TRIGGERS = [
   "mineBlock",
   "death",
 ] as const;
+// Java の判別値の既知集合（実行時の未知値を fail-close するための正本）。
+export const JAVA_KINDS = ["recipe", "script", "resourcepack", "loot"] as const;
+export const JAVA_RECIPE_TYPES = [
+  "shaped",
+  "shapeless",
+  "smelting",
+  "blasting",
+  "smoking",
+  "campfire_cooking",
+  "stonecutting",
+  "smithing_transform",
+] as const;
+export const RESOURCEPACK_PATTERNS = ["lang", "itemModelSwap"] as const;
 
 export function createEmptySpec(edition: "bedrock"): BedrockAddonSpec;
 export function createEmptySpec(edition: "java"): JavaAddonSpec;
@@ -250,6 +263,34 @@ function validateJava(
   rule: JavaVersionRule | undefined,
   errors: string[],
 ): void {
+  // Java 検証は version rule を必須 context とする（未取得は生成不可）。
+  if (!rule) {
+    errors.push("Java版の設定を取得できていません。生成できません。");
+    return;
+  }
+  // 判別値の未知値は既知パターンへ化けさせず、ここで fail-close する。
+  if (!(JAVA_KINDS as readonly string[]).includes(spec.kind)) {
+    errors.push(`未対応の種類です: ${spec.kind}`);
+    return;
+  }
+  if (
+    spec.kind === "recipe" &&
+    spec.recipe &&
+    !(JAVA_RECIPE_TYPES as readonly string[]).includes(spec.recipe.recipeType)
+  ) {
+    errors.push(`未対応のレシピ種類です: ${spec.recipe.recipeType}`);
+    return;
+  }
+  if (
+    spec.kind === "resourcepack" &&
+    spec.resourcepack &&
+    !(RESOURCEPACK_PATTERNS as readonly string[]).includes(
+      spec.resourcepack.pattern,
+    )
+  ) {
+    errors.push(`未対応のリソースパック種別です: ${spec.resourcepack.pattern}`);
+    return;
+  }
   for (const id of capabilitiesForSpec(spec))
     if (!capabilities.includes(id))
       errors.push(`現在のJava版では未対応の機能です: ${id}`);
@@ -386,6 +427,12 @@ function validateJavaScript(
       errors.push("固定する時刻が未設定です。");
     if (a.type === "setWeather" && !a.weatherValue)
       errors.push("固定する天候が未設定です。");
+    // 時刻・天候の「固定」は周期再設定でのみ成立する。イベント系（1回実行）は禁止。
+    if (
+      ["setTime", "setWeather"].includes(a.type) &&
+      s.trigger !== "interval"
+    )
+      errors.push("時刻・天候の固定は定期実行トリガーでのみ使えます。");
   }
 }
 

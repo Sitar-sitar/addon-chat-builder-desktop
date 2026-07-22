@@ -124,6 +124,63 @@ describe("spec validation", () => {
       [],
     );
   });
+  it("fails closed on unknown Java discriminants", () => {
+    const rule = JAVA_VERSIONS["1.21.7"];
+    const unknownKind = { ...javaSpec(), kind: "mystery" } as never;
+    expect(validateSpec(unknownKind, caps(), rule).join()).toContain(
+      "未対応の種類です: mystery",
+    );
+    const unknownRecipe = javaSpec({
+      recipe: { ...shapedRecipe(), recipeType: "brewing" as never },
+    });
+    expect(validateSpec(unknownRecipe, caps(), rule).join()).toContain(
+      "未対応のレシピ種類です: brewing",
+    );
+    const unknownPattern = javaSpec({
+      kind: "resourcepack",
+      recipe: undefined,
+      resourcepack: {
+        pattern: "shader" as never,
+        langEntries: [],
+        targetItem: "",
+        sourceItem: "",
+      },
+    });
+    expect(validateSpec(unknownPattern, caps(), rule).join()).toContain(
+      "未対応のリソースパック種別です: shader",
+    );
+  });
+  it("requires a version rule for Java validation", () => {
+    const cooking = javaSpec({
+      recipe: {
+        ...shapedRecipe(),
+        recipeType: "smelting",
+        inputItem: "minecraft:raw_gold",
+        resultItem: "minecraft:gold_ingot",
+        resultCount: 2,
+      },
+    });
+    // 26.2 では有効な cooking(count=2) でも、rule 欠落なら設定未取得で拒否する。
+    expect(validateSpec(cooking, caps("26.2"), undefined).join()).toContain(
+      "設定を取得できていません",
+    );
+  });
+  it("allows setTime/setWeather only on the interval trigger", () => {
+    const rule = JAVA_VERSIONS["1.21.7"];
+    const onEvent = javaScriptSpec({
+      trigger: "consumeItem",
+      triggerItemId: "minecraft:apple",
+      actions: [emptyAction("setTime")],
+    });
+    expect(validateSpec(onEvent, caps(), rule).join()).toContain(
+      "定期実行トリガーでのみ",
+    );
+    const onInterval = javaScriptSpec({
+      trigger: "interval",
+      actions: [emptyAction("setTime")],
+    });
+    expect(validateSpec(onInterval, caps(), rule)).toEqual([]);
+  });
   it("rejects unavailable capabilities and keeps specChecks equivalent", () => {
     const spec = javaSpec({
       kind: "resourcepack",

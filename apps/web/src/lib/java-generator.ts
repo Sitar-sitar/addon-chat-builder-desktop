@@ -64,7 +64,9 @@ export function generateJavaFiles(
   if (spec.kind === "recipe") files.push(generateRecipe(spec, rule));
   else if (spec.kind === "script") files.push(...generateScript(spec, rule));
   else if (spec.kind === "loot") files.push(generateLoot(spec));
-  else files.push(...generateResourcepack(spec));
+  else if (spec.kind === "resourcepack")
+    files.push(...generateResourcepack(spec));
+  else throw new Error(`未対応の種類です: ${spec.kind}`);
   assertUniquePaths(files);
   return files;
 }
@@ -189,7 +191,7 @@ function generateRecipe(
       ingredient: ingredient(r.inputItem, rule.plainIngredients),
       result: { id: r.resultItem, count: r.resultCount },
     };
-  else
+  else if (r.recipeType === "smithing_transform")
     value = {
       type: "minecraft:smithing_transform",
       template: ingredient(r.smithingTemplate, rule.plainIngredients),
@@ -197,6 +199,7 @@ function generateRecipe(
       addition: ingredient(r.smithingAddition, rule.plainIngredients),
       result: { id: r.resultItem },
     };
+  else throw new Error(`未対応のレシピ種類です: ${r.recipeType}`);
   return jsonFile(
     `data/${spec.namespace}/recipe/${spec.outputName}.json`,
     value,
@@ -399,6 +402,8 @@ function generateResourcepack(spec: JavaAddonSpec): GeneratedPackFile[] {
         },
       ),
     ];
+  if (r.pattern !== "lang")
+    throw new Error(`未対応のリソースパック種別です: ${r.pattern}`);
   const entries = Object.fromEntries(
     r.langEntries.map((e) => [e.key, e.value.trim()]),
   );
@@ -423,8 +428,18 @@ function buildReadme(
   version: string,
   description: string,
 ): string {
-  const destination =
-    resolvePackType(spec) === "resourcepack" ? "resourcepacks" : "datapacks";
+  const install =
+    resolvePackType(spec) === "resourcepack"
+      ? [
+          "導入: このzipファイルを解凍せずそのまま、",
+          "      %APPDATA%\\.minecraft\\resourcepacks\\ フォルダへ入れてください。",
+          "      ゲーム内「設定 > リソースパック」で本パックを有効側へ移動してください。",
+        ]
+      : [
+          "導入: このzipファイルを解凍せずそのまま、対象ワールドの",
+          "      %APPDATA%\\.minecraft\\saves\\<ワールド名>\\datapacks\\ フォルダへ入れてください。",
+          "      ゲーム内で /reload を実行し、/datapack list enabled に本パックが表示されれば有効です。",
+        ];
   const notes = [
     "注意: minecraft: IDの実在確認は行いません。存在しないIDを指定した処理はゲーム内で無効になります。",
   ];
@@ -447,7 +462,7 @@ function buildReadme(
     description,
     "",
     `対象: Minecraft Java Edition ${version}`,
-    `導入: このzipを対象ワールドまたはMinecraftの ${destination} フォルダへ配置してください。`,
+    ...install,
     ...notes,
     "",
   ].join("\n");

@@ -84,6 +84,7 @@ export default function Home() {
   const javaGateOpen =
     spec.edition !== "java" ||
     (!!javaTargetVersion &&
+      !!javaVersionRule &&
       spec.unresolvedQuestions.length === 0 &&
       spec.unsupportedRequests.length === 0);
   const canBuild = specErrors.length === 0 && javaGateOpen;

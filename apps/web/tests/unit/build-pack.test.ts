@@ -65,6 +65,30 @@ describe("buildPack", () => {
     );
     expect(await fs.readdir(out)).toEqual([]);
   });
+  it("rejects unknown Java discriminants before writing output", async () => {
+    process.env.JAVA_TARGET_VERSION = "1.21.7";
+    const specs = [
+      { ...javaSpec(), kind: "mystery" } as never,
+      javaSpec({
+        recipe: { ...shapedRecipe(), recipeType: "brewing" as never },
+      }),
+      javaSpec({
+        kind: "resourcepack",
+        recipe: undefined,
+        resourcepack: {
+          pattern: "shader" as never,
+          langEntries: [],
+          targetItem: "",
+          sourceItem: "",
+        },
+      }),
+    ];
+    for (const spec of specs) {
+      const out = await output();
+      await expect(buildPack(spec, out)).rejects.toThrow("未対応");
+      expect(await fs.readdir(out)).toEqual([]);
+    }
+  });
   it("rejects unknown versions and invalid scripts", async () => {
     const out = await output();
     process.env.JAVA_TARGET_VERSION = "1.21.999";
