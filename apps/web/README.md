@@ -1,5 +1,7 @@
 # addon-chat-builder
 
+本ディレクトリは `addon-chat-builder-desktop` に同梱されたWebアプリ本体です。2026-07-22以降の正本は親リポジトリの `main` であり、旧単体リポジトリ `addon-chat-builder` には反映しません。
+
 ChatGPT API と対話しながらMinecraft Bedrock Edition用アドオンの仕様を整理・生成し、Minecraft Java Edition用の小さなデータパック／リソースパックも作れるローカルWebアプリです。
 
 ## 採用方針

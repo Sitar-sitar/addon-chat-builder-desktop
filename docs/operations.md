@@ -32,7 +32,7 @@ dotnet run --project src\AddonChatBuilder.Desktop
 
 ## Webアプリ
 
-Next.js Webアプリは、このリポジトリ内の `apps\web` で管理する。
+Next.js Webアプリは、このリポジトリ内の `apps\web` で管理する。2026-07-22以降、親リポジトリの `main` が公式な現行正本である。
 
 初回セットアップまたは依存関係を更新した場合は、以下を実行する。
 
@@ -47,7 +47,7 @@ npm run build
 
 ユーザー別設定が旧 `D:\my-app2\Minecraft_Addon\addon-chat-builder` を指していても、`apps\web\node_modules\next\dist\bin\next` が存在する場合は、起動時に `D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\apps\web` へ自動移行される。
 
-移行期間中は、`apps\web\node_modules\next\dist\bin\next` が存在しない場合、隣接する旧 `D:\my-app2\Minecraft_Addon\addon-chat-builder` も探索対象になる。
+互換・ロールバック用として、`apps\web\node_modules\next\dist\bin\next` が存在しない場合は隣接する旧 `D:\my-app2\Minecraft_Addon\addon-chat-builder` も探索対象になる。旧版は legacy であり、この互換機能は旧版を正本とするものではない。
 
 ## デスクトップショートカット
 

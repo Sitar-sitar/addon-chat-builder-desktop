@@ -1,11 +1,19 @@
 # 設計書B: コード重複の一本化（旧アプリ撤去）
 
-作成日: 2026-06-17 / 状態: 着手前（正本）/ 実装は未着手
+- 作成日: 2026-06-17
+- 対象アプリ: addon-chat-builder-desktop
+- 種別: 実装設計書
+- 対象バージョン: 現行版
+- 前提コミット: `ff0d03a`
+- ステータス: 実装中（正本指定済み、旧版の物理撤去は保留）
+- 関連: [README.md](../README.md) / [operations.md](operations.md) / [設計書インデックス.md](設計書インデックス.md)
+
+> **2026-07-22 ユーザー確定**: `addon-chat-builder-desktop` リポジトリの `main` を公式な現行系統とし、同梱 `apps/web` をWebアプリ本体の唯一の正本とする。旧 `addon-chat-builder` は legacy として扱い、新たな変更の反映先にしない。
 
 ## 1. 目的と前提
 
-対話型アドオン生成アプリが2か所にほぼ同一コピーで存在しており、二重メンテのリスク源になっている。
-**正本を `addon-chat-builder-desktop/apps/web/` に一本化し、旧 `addon-chat-builder/` を撤去**する。
+対話型アドオン生成アプリが2か所に存在しており、二重メンテのリスク源になっている。
+**正本を `addon-chat-builder-desktop/apps/web/` に一本化**し、旧 `addon-chat-builder/` はまず legacy 化したうえで、安全条件を満たした後に物理撤去・GitHubアーカイブを別フェーズで実施する。
 
 - 撤去対象: `D:\my-app2\Minecraft_Addon\addon-chat-builder\`（独立したGitリポジトリ）
 - 正本: `D:\my-app2\Minecraft_Addon\addon-chat-builder-desktop\apps\web\`
@@ -33,11 +41,12 @@
   - 起動補助: `start.bat`、`launcher.ps1`、`Addon Chat Builder.lnk`、`.launcher/`
   - 機密: `.env`（撤去前に内容が正本側 `.env`／`%LOCALAPPDATA%` に存在するか要確認。OPENAI_API_KEY等を失わないこと）
 
-### 3-2. 撤去方法の選択（要判断）
+### 3-2. 旧リポジトリの扱い（2026-07-22 確定）
 
-- 案1（推奨）: フォルダごと削除。GitHub リポジトリ `Sitar-sitar/addon-chat-builder` はアーカイブ化（読み取り専用）。
-- 案2: ローカルは削除、GitHubは残置（履歴保全のみ）。
-- いずれもローカル削除前に、最終コミットがリモートへ push 済みであることを確認する。
+- 現時点ではローカルフォルダとGitHubリポジトリを残す。READMEとGitHub descriptionで legacy / superseded を明示し、新規開発は禁止する。
+- 2026-07-22確認時点で旧ローカルリポジトリに未コミットのコード差分があるため、削除・強制初期化・アーカイブは行わない。
+- 物理撤去は、未コミット差分の要否確定、必要分の正本への反映、機密設定の退避、最終push、正本の単独起動確認がそろった後の別作業とする。
+- 旧版の残置は履歴保全のためであり、`addon-chat-builder-desktop/main` の正本性に影響しない。
 
 ## 4. 影響範囲と対応（参照の付け替え）
 
@@ -87,6 +96,14 @@
 
 ## 5. 撤去手順（段階的・検証付き）
 
+### Phase A: 正本の正式化
+
+1. `addon-chat-builder-desktop/main` がGitHubの既定ブランチであることを確認する。
+2. 本README、旧README、親プロジェクト台帳、ポート台帳、Obsidian要約を「desktop/main が正本」へ同期する。
+3. GitHub description で現行・legacyの関係を明示する。
+
+### Phase B: 旧版の物理撤去（保留）
+
 1. **バックアップ/退避確認**
    - 旧 `.env` のキーが正本側（`addon-chat-builder-desktop\.env` または `%LOCALAPPDATA%\AddonChatBuilderDesktop\.env`）に存在することを確認。無ければ先に退避。
    - 旧リポジトリの未push変更が無いこと（`git status` / `git log` で確認）。
@@ -109,6 +126,21 @@
 
 ## 7. 完了の定義（DoD）
 
+### Phase A（正本の正式化）
+
+- GitHubの既定ブランチと全ての現行台帳が `addon-chat-builder-desktop/main` を正本と示す。
+- ポート3031の所有者が `addon-chat-builder-desktop/apps/web` に一意化される。
+- 旧リポジトリは legacy と明示され、新規変更の反映先でない。
+
+### Phase B（物理撤去）
+
 - 旧 `addon-chat-builder/` が存在しなくても、デスクトップ起動・`npm run dev` 単独起動の双方で全機能が動く。
 - C#・README・PROJECT_OVERVIEW・PORTS・ports.json・Obsidian から、撤去済み旧パスへの「現役」参照が無い（履歴記録を除く）。
 - `npm run lint` / `dotnet build` がエラーなし。
+
+## 変更履歴
+
+| 日付 | 内容 |
+|---|---|
+| 2026-06-17 | 新規作成。正本の `apps/web` 一本化と旧単体版の撤去を設計。 |
+| 2026-07-22 | ユーザー判断により `addon-chat-builder-desktop/main` を公式な現行正本に確定。旧版に未コミット差分があるため、正本の正式化と物理撤去を分離し、撤去・アーカイブは保留。 |

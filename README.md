@@ -1,8 +1,10 @@
 # addon-chat-builder-desktop
 
-Minecraft Bedrock アドオン／Javaパック作成支援アプリ `addon-chat-builder` を、家族・別Windowsユーザーが扱いやすい専用デスクトップアプリとして起動するための .NET + WebView2 プロジェクト。
+Minecraft Bedrock アドオン／JavaパックをAIとの対話で作成する、.NET + WebView2 のWindowsデスクトップアプリ。
 
-Next.js アプリ本体は `apps/web` で管理し、デスクトップ版は起動・停止・WebView表示・Windows標準UI連携を担当する。
+**2026-07-22以降、本リポジトリの `main` ブランチがプロジェクト全体の現行正本である。** Next.js アプリ本体は同梱の `apps/web` で管理し、デスクトップ本体は起動・停止・WebView表示・Windows標準UI連携を担当する。
+
+旧単体リポジトリ `Sitar-sitar/addon-chat-builder` / `..\addon-chat-builder` は履歴・退避用の legacy であり、新規開発、不具合修正、設計書更新の反映先にしない。
 
 ## 構成
 
@@ -16,7 +18,13 @@ addon-chat-builder-desktop/
 └── scripts/
 ```
 
-ユーザー別設定が旧 `..\addon-chat-builder` を指していても、`apps/web` が実行可能なら起動時に自動で `apps/web` へ移行する。`apps/web` に依存関係が未導入の場合は、移行期間中の互換性として隣接する旧 `..\addon-chat-builder` も探索対象にする。
+ユーザー別設定が旧 `..\addon-chat-builder` を指していても、`apps/web` が実行可能なら起動時に自動で正本へ移行する。現行実装に残る旧パス探索は移行・ロールバック用の互換機能であり、旧リポジトリを現行正本とするものではない。
+
+## Git運用
+
+- 既定ブランチは `main`。リリース可能な現行状態は `main` で管理する。
+- Webアプリの変更も `apps/web` へ行い、旧単体リポジトリへは反映しない。
+- 設計・レビュー・実装記録は本リポジトリの `docs/` に集約する。
 
 ## Web アプリの依存関係
 
