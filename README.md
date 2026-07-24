@@ -65,8 +65,9 @@ dotnet --info
 `global.json` で SDK `8.0.421` を固定しているため、別PCでも同じ SDK を入れれば挙動を揃えやすい。
 
 Java多パターン対応の正本は [機能設計書_Java多パターン対応_2026-07-19.md](docs/機能設計書_Java多パターン対応_2026-07-19.md)。
-リリース後の修正は [修正設計書_Java多パターン実装精査対応_2026-07-20.md](docs/修正設計書_Java多パターン実装精査対応_2026-07-20.md)（v0.7.1）と
-[修正設計書_Java多パターン現行再評価対応_2026-07-23.md](docs/修正設計書_Java多パターン現行再評価対応_2026-07-23.md)（v0.7.2）で追補する。
+リリース後の修正は [修正設計書_Java多パターン実装精査対応_2026-07-20.md](docs/修正設計書_Java多パターン実装精査対応_2026-07-20.md)（v0.7.1）、
+[修正設計書_Java多パターン現行再評価対応_2026-07-23.md](docs/修正設計書_Java多パターン現行再評価対応_2026-07-23.md)（v0.7.2）、
+[修正設計書_Java時刻天候アクション設定化_2026-07-24.md](docs/修正設計書_Java時刻天候アクション設定化_2026-07-24.md)（v0.7.3。setTime/setWeather を全トリガー許容・「設定」/one-shot へ）で追補する。
 capability の網羅契約は「ID 登録漏れ＝`JAVA_CAPABILITY_VALIDATORS`／`JAVA_GENERATOR_CAPABILITY_COVERAGE` の `Record<JavaCapabilityId, true>`」と
 「生成内容の網羅＝版×capability テスト（`tests/unit/pattern-catalog.test.ts`）」の二本立てが現行の正本であり、
 機能設計書に残る `Record<JavaCapabilityId, GeneratorFn>` の完全マップ記述は v0.7.2 修正設計書が supersede する。

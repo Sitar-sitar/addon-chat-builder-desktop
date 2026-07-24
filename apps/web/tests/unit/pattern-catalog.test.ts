@@ -30,6 +30,23 @@ describe("pattern catalog", () => {
       ids,
     );
   });
+  // v0.7.3: 語義の修正そのものが仕様のため、文言を完全一致で固定する。
+  it("fixes the confirmed wording of the time/weather actions", () => {
+    const byId = Object.fromEntries(JAVA_CAPABILITIES.map((c) => [c.id, c]));
+    expect(byId["script.action.setTime"].label).toBe("時刻設定");
+    expect(byId["script.action.setTime"].promptLine).toBe(
+      "時刻を day/night/noon/midnight のいずれかへ設定する（発火時に1回）。26.2 ではオーバーワールドでの実行のみ対象。",
+    );
+    expect(byId["script.action.setWeather"].label).toBe("天候設定");
+    expect(byId["script.action.setWeather"].promptLine).toBe(
+      "天候を clear/rain/thunder のいずれかへ設定する（発火時に1回）。",
+    );
+    expect(
+      JAVA_CAPABILITIES.filter((c) =>
+        ["script.action.setTime", "script.action.setWeather"].includes(c.id),
+      ).every((c) => !c.label.includes("固定") && !c.promptLine.includes("固定")),
+    ).toBe(true);
+  });
   it("reproduces the v0.2.0 baseline at release phase 0", () => {
     const baseline = [
       "recipe.shaped",

@@ -423,16 +423,11 @@ function validateJavaScript(
     }
     if (a.type === "playsound" && !MC_SOUND_ID.test(a.soundId))
       errors.push("サウンドIDが不正です。");
+    // 時刻・天候は発火時に1回だけ設定する one-shot。trigger は問わない。
     if (a.type === "setTime" && !a.timeValue)
-      errors.push("固定する時刻が未設定です。");
+      errors.push("設定する時刻が未設定です。");
     if (a.type === "setWeather" && !a.weatherValue)
-      errors.push("固定する天候が未設定です。");
-    // 時刻・天候の「固定」は周期再設定でのみ成立する。イベント系（1回実行）は禁止。
-    if (
-      ["setTime", "setWeather"].includes(a.type) &&
-      s.trigger !== "interval"
-    )
-      errors.push("時刻・天候の固定は定期実行トリガーでのみ使えます。");
+      errors.push("設定する天候が未設定です。");
   }
 }
 

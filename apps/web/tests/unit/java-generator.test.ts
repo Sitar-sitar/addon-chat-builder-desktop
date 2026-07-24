@@ -274,4 +274,133 @@ describe("java generator", () => {
       ),
     ).not.toContain("同じ namespace");
   });
+
+  // --- v0.7.3: 時刻/天候アクションの「設定」化 ---
+
+  it("describes time/weather actions as 設定", () => {
+    expect(
+      describePack(
+        javaScriptSpec({ trigger: "interval", actions: [emptyAction("setTime")] }),
+        "1.21.7",
+      ),
+    ).toBe("60秒ごとに、時刻をdayに設定するデータパック（Java 1.21.7）");
+    expect(
+      describePack(
+        javaScriptSpec({
+          trigger: "interval",
+          actions: [emptyAction("setWeather")],
+        }),
+        "1.21.7",
+      ),
+    ).toBe("60秒ごとに、天候をclearに設定するデータパック（Java 1.21.7）");
+  });
+
+  it("emits the one-shot command with its harness epilogue on every event trigger", () => {
+    const eventCases = [
+      {
+        fields: { trigger: "consumeItem", triggerItemId: "minecraft:apple" },
+        epilogue: "advancement revoke @s only test_pack:on_event",
+      },
+      {
+        fields: { trigger: "placedBlock", triggerBlockId: "minecraft:stone" },
+        epilogue: "advancement revoke @s only test_pack:on_event",
+      },
+      {
+        fields: { trigger: "killEntity", triggerEntityId: "minecraft:zombie" },
+        epilogue: "advancement revoke @s only test_pack:on_event",
+      },
+      {
+        fields: { trigger: "mineBlock", triggerBlockId: "minecraft:stone" },
+        epilogue: "scoreboard players set @s ",
+      },
+      { fields: { trigger: "death" }, epilogue: "scoreboard players set @s " },
+    ] as const;
+    const commands = [
+      ["setTime", "time set day"],
+      ["setWeather", "weather clear"],
+    ] as const;
+    for (const eventCase of eventCases)
+      for (const [action, command] of commands) {
+        const files = generateJavaFiles(
+          javaScriptSpec({
+            ...eventCase.fields,
+            actions: [emptyAction(action)],
+          }),
+          "1.21.7",
+        );
+        const lines = files
+          .find((f) => f.path === "data/test_pack/function/on_event.mcfunction")!
+          .content.trim()
+          .split("\n");
+        expect(lines[0]).toBe(command);
+        expect(lines[lines.length - 1].startsWith(eventCase.epilogue)).toBe(true);
+      }
+  });
+
+  it("adds the one-shot note for time/weather and the dimension note only for setTime", () => {
+    const readme = (actions: ReturnType<typeof emptyAction>[]) =>
+      generateJavaFiles(
+        javaScriptSpec({ trigger: "interval", actions }),
+        "1.21.7",
+      ).find((f) => f.path === "README.txt")!.content;
+    const oneShot = "注意: 時刻・天候は発火時に1回だけ設定されます";
+    const dimension = "注意: 時刻の設定はオーバーワールドでの実行を前提とします";
+
+    const timeOnly = readme([emptyAction("setTime")]);
+    expect(timeOnly).toContain(oneShot);
+    expect(timeOnly).toContain(dimension);
+
+    const weatherOnly = readme([emptyAction("setWeather")]);
+    expect(weatherOnly).toContain(oneShot);
+    expect(weatherOnly).not.toContain(dimension);
+
+    const neither = readme([emptyAction("message")]);
+    expect(neither).not.toContain(oneShot);
+    expect(neither).not.toContain(dimension);
+  });
+
+  // REV-P1-01: 許容差分は pack.mcmeta の description と README.txt のみ。
+  // それ以外は v0.7.2 とバイト一致でなければならない。
+  it("limits the v0.7.2 diff to pack.mcmeta description and README.txt", () => {
+    const files = generateJavaFiles(
+      javaScriptSpec({ trigger: "interval", actions: [emptyAction("setTime")] }),
+      "1.21.7",
+    );
+    const byPath = Object.fromEntries(files.map((f) => [f.path, f.content]));
+    expect(Object.keys(byPath).sort()).toEqual([
+      "README.txt",
+      "data/minecraft/tags/function/load.json",
+      "data/test_pack/function/load.mcfunction",
+      "data/test_pack/function/main.mcfunction",
+      "pack.mcmeta",
+    ]);
+
+    // バイト一致（v0.7.2 と同一）
+    expect(byPath["data/test_pack/function/load.mcfunction"]).toBe(
+      "schedule function test_pack:main 60s replace\n",
+    );
+    expect(byPath["data/test_pack/function/main.mcfunction"]).toBe(
+      "time set day\nschedule function test_pack:main 60s replace\n",
+    );
+    expect(JSON.parse(byPath["data/minecraft/tags/function/load.json"])).toEqual(
+      { values: ["test_pack:load"] },
+    );
+
+    // 許容差分1: pack.mcmeta は description のみ。format 系キーは不変。
+    const mcmeta = JSON.parse(byPath["pack.mcmeta"]);
+    expect(Object.keys(mcmeta.pack).sort()).toEqual([
+      "description",
+      "pack_format",
+    ]);
+    expect(mcmeta.pack.pack_format).toBe(81);
+    expect(mcmeta.pack.description).toBe(
+      "60秒ごとに、時刻をdayに設定するデータパック（Java 1.21.7）",
+    );
+
+    // 許容差分2: README は description 行と注記のみ。
+    expect(byPath["README.txt"]).toContain(
+      "60秒ごとに、時刻をdayに設定するデータパック（Java 1.21.7）",
+    );
+    expect(byPath["README.txt"]).not.toContain("固定する");
+  });
 });

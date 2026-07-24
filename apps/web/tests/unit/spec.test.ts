@@ -165,21 +165,56 @@ describe("spec validation", () => {
       "設定を取得できていません",
     );
   });
-  it("allows setTime/setWeather only on the interval trigger", () => {
+  // v0.7.3: 時刻・天候は one-shot の「設定」。interval 専用制限は撤回し全 trigger で許可する。
+  it("allows setTime/setWeather on every event trigger and on interval", () => {
     const rule = JAVA_VERSIONS["1.21.7"];
-    const onEvent = javaScriptSpec({
-      trigger: "consumeItem",
-      triggerItemId: "minecraft:apple",
-      actions: [emptyAction("setTime")],
-    });
-    expect(validateSpec(onEvent, caps(), rule).join()).toContain(
-      "定期実行トリガーでのみ",
-    );
-    const onInterval = javaScriptSpec({
-      trigger: "interval",
-      actions: [emptyAction("setTime")],
-    });
-    expect(validateSpec(onInterval, caps(), rule)).toEqual([]);
+    const eventCases = [
+      { trigger: "consumeItem", triggerItemId: "minecraft:apple" },
+      { trigger: "placedBlock", triggerBlockId: "minecraft:stone" },
+      { trigger: "killEntity", triggerEntityId: "minecraft:zombie" },
+      { trigger: "mineBlock", triggerBlockId: "minecraft:stone" },
+      { trigger: "death" },
+    ] as const;
+    for (const eventCase of eventCases)
+      for (const action of ["setTime", "setWeather"] as const)
+        expect(
+          validateSpec(
+            javaScriptSpec({ ...eventCase, actions: [emptyAction(action)] }),
+            caps(),
+            rule,
+          ),
+        ).toEqual([]);
+    expect(
+      validateSpec(
+        javaScriptSpec({
+          trigger: "interval",
+          actions: [emptyAction("setTime"), emptyAction("setWeather")],
+        }),
+        caps(),
+        rule,
+      ),
+    ).toEqual([]);
+  });
+  it("uses the confirmed wording when the time/weather value is missing", () => {
+    const rule = JAVA_VERSIONS["1.21.7"];
+    expect(
+      validateSpec(
+        javaScriptSpec({
+          actions: [{ ...emptyAction("setTime"), timeValue: "" }],
+        }),
+        caps(),
+        rule,
+      ),
+    ).toContain("設定する時刻が未設定です。");
+    expect(
+      validateSpec(
+        javaScriptSpec({
+          actions: [{ ...emptyAction("setWeather"), weatherValue: "" }],
+        }),
+        caps(),
+        rule,
+      ),
+    ).toContain("設定する天候が未設定です。");
   });
   it("rejects unavailable capabilities and keeps specChecks equivalent", () => {
     const spec = javaSpec({

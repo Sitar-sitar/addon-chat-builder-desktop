@@ -119,8 +119,8 @@ function describeAction(a: JavaScriptAction): string {
   if (a.type === "title") return "タイトル表示";
   if (a.type === "actionbar") return "アクションバー表示";
   if (a.type === "playsound") return "サウンド再生";
-  if (a.type === "setTime") return `時刻を${a.timeValue}に固定`;
-  return `天候を${a.weatherValue}に固定`;
+  if (a.type === "setTime") return `時刻を${a.timeValue}に設定`;
+  return `天候を${a.weatherValue}に設定`;
 }
 
 function displayId(id: string): string {
@@ -456,6 +456,15 @@ function buildReadme(
     ["mineBlock", "death"].includes(spec.javaScript?.trigger ?? "")
   )
     notes.push("注意: イベント検知には最大1秒の遅延があります。");
+  const actionTypes = (spec.javaScript?.actions ?? []).map((a) => a.type);
+  if (actionTypes.some((t) => t === "setTime" || t === "setWeather"))
+    notes.push(
+      "注意: 時刻・天候は発火時に1回だけ設定されます（継続的な固定ではありません。定期実行トリガーでは実行のたびに設定し直されます）。",
+    );
+  if (actionTypes.includes("setTime"))
+    notes.push(
+      "注意: 時刻の設定はオーバーワールドでの実行を前提とします。26.2 では他ディメンションでの実行は対象外です。",
+    );
   return [
     spec.title,
     "",
